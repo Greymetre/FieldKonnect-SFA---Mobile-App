@@ -125,11 +125,6 @@ const LoginScreen = ({ navigation }: { navigation: any }) => {
             resizeMode="contain"
             source={require('../../assets/images/FieldKonnectLogo.png')}
           />
-          <FastImage
-            style={styles.dukeLogo}
-            resizeMode="contain"
-            source={require('../../assets/images/duke_logo_new.png')}
-          />
         </View>
 
         <View style={[styles.container, styles.subContainer]}>

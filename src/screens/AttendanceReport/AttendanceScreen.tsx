@@ -1,5 +1,6 @@
 
 
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -551,7 +552,7 @@ const AttendanceScreen: React.FC<{ navigation: any; route: any }> = ({ navigatio
       formData.append('punchout_longitude', location.longitude.toFixed(6));
       formData.append('punchout_summary', punchSummary.trim() || 'Day completed');
 
-      const success = await submitAttendance('https://duke.fieldkonnect.in/api/userPunchout', formData, 'Punch-out successful!');
+      const success = await submitAttendance(`${BASE_URL}api/userPunchout`, formData, 'Punch-out successful!');
       if (success) {
         await stopLiveLocationTracking({ captureFinalLocation: true }).catch(error => {
           console.log('Failed to stop live location after punch-out:', error);
@@ -585,7 +586,7 @@ const AttendanceScreen: React.FC<{ navigation: any; route: any }> = ({ navigatio
       formData.append('city', selectedCities.map((c) => c.label).join(', ')); // ← comma separated
       formData.append('punchin_summary', 'Followed tour plan');
       console.log(formData, 'formDataformData')
-      const success = await submitAttendance('https://duke.fieldkonnect.in/api/userPunchin', formData, 'Punch-in successful!');
+      const success = await submitAttendance(`${BASE_URL}api/userPunchin`, formData, 'Punch-in successful!');
       if (success) {
         await startLiveLocationTracking({ showDisclosure: false }).catch(error => {
           console.log('Failed to start live location after punch-in:', error);

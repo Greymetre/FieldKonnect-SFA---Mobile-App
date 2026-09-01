@@ -138,7 +138,7 @@ const CreatePlan: React.FC = ({ navigation, route }: any) => {
     if (!token) return;
 
     try {
-      const res = await fetch('https://duke.fieldkonnect.in/api/tour/userlist', {
+      const res = await fetch(`${BASE_URL}api/tour/userlist`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
@@ -160,7 +160,8 @@ const CreatePlan: React.FC = ({ navigation, route }: any) => {
     if (!token) return;
 
     try {
-      const res = await fetch('https://duke.fieldkonnect.in/api/userDistrictList', {
+      const userQuery = routeItem ? `?user_id=${encodeURIComponent(routeItem)}` : '';
+      const res = await fetch(`${BASE_URL}api/userDistrictList${userQuery}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
@@ -186,7 +187,9 @@ const CreatePlan: React.FC = ({ navigation, route }: any) => {
 
     try {
       const res = await fetch(
-        `https://duke.fieldkonnect.in/api/userCitiesByDistrict?district_id=${districtId}`,
+        `${BASE_URL}api/userCitiesByDistrict?district_id=${encodeURIComponent(districtId)}${
+          routeItem ? `&user_id=${encodeURIComponent(routeItem)}` : ''
+        }`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }

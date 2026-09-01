@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -101,7 +102,7 @@ const AddTourPlan = ({ navigation }) => {
       if (!token) return;
 
       try {
-        const res = await fetch('https://duke.fieldkonnect.in/api/tour/userlist', {
+        const res = await fetch(`${BASE_URL}api/tour/userlist`, {
           method: 'GET',
           headers: {
             Accept: 'application/json',
@@ -184,7 +185,7 @@ const AddTourPlan = ({ navigation }) => {
     };
 
     try {
-      const res = await fetch(`${BASE_URL}/api/tour/add`, {  // or use the full URL if BASE_URL is not set
+      const res = await fetch(`${BASE_URL}api/tour/add`, {
         method: 'POST',
         headers: {
           Accept: 'application/json',

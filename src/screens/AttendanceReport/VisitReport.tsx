@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -147,7 +148,7 @@ const VisitReport: React.FC<VisitReportProps> = ({ navigation, route }) => {
         setVisitTypesLoading(true);
         setVisitTypesError(false);
         const token = store.getState().auth?.token;
-        const response = await axios.get('https://duke.fieldkonnect.in/api/getVisitTypes', {
+        const response = await axios.get(`${BASE_URL}api/getVisitTypes`, {
           headers: {
             Authorization: `Bearer ${token}`,
             'Content-Type': 'application/json',

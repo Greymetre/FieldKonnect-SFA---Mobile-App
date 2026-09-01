@@ -39,6 +39,7 @@ import { APP_VERSION, compareVersions } from '../../utils/appVersion'
 import NotificationBell from '../../components/NotificationBell'
 import PrimaryShineChip from '../../components/atoms/PrimaryShineChip'
 import DealerDistributorPerformanceCard from '../../components/atoms/DealerDistributorPerformanceCard'
+import { BASE_URL } from '../../api/AxiosClient'
 
 interface DropdownItem {
   label: string;
@@ -188,7 +189,7 @@ const Home = () => {
       setLoadingPunchStatus(true);
       const token = store.getState()?.auth?.token;
 
-      const res = await axios.get('https://duke.fieldkonnect.in/api/getPunchin', {
+      const res = await axios.get(`${BASE_URL}api/getPunchin`, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
@@ -259,7 +260,7 @@ const Home = () => {
       setHomeLoading(true);
       const token = store.getState()?.auth?.token;
 
-      const res = await axios.get('https://duke.fieldkonnect.in/api/attendance/today-summary', {
+      const res = await axios.get(`${BASE_URL}api/attendance/today-summary`, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -280,7 +281,7 @@ const Home = () => {
       setLoadingBalances(true);
       const token = store.getState()?.auth?.token;
 
-      const res = await axios.get('https://duke.fieldkonnect.in/api/leaves/balance', {
+      const res = await axios.get(`${BASE_URL}api/leaves/balance`, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -349,7 +350,7 @@ const Home = () => {
       };
 
 
-      const res = await axios.post('https://duke.fieldkonnect.in/api/addLeaves', payload, {
+      const res = await axios.post(`${BASE_URL}api/addLeaves`, payload, {
         headers: {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
@@ -575,7 +576,7 @@ const Home = () => {
       setCustomerTypesLoading(true);
       const token = store.getState()?.auth?.token;
 
-      const res = await axios.get('https://duke.fieldkonnect.in/api/getCustomerTypeList', {
+      const res = await axios.get(`${BASE_URL}api/getCustomerTypeList`, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
@@ -622,7 +623,7 @@ const Home = () => {
 
     try {
       const response = await fetch(
-        `https://duke.fieldkonnect.in/api/getMyHierarchyUsers?type=RETAILER`,
+        `${BASE_URL}api/getMyHierarchyUsers?type=RETAILER`,
         {
           method: 'GET',
           headers: {
@@ -685,7 +686,7 @@ const Home = () => {
       const token = store.getState()?.auth?.token;
 
       const response = await axios.get(
-        'https://duke.fieldkonnect.in/api/getAppVersion',
+        `${BASE_URL}api/getAppVersion`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Keyboard, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import AppText from '../../components/AppText/AppText';
@@ -105,7 +106,7 @@ const CustomerList = ({ route }: any) => {
       const token = store.getState()?.auth?.token;
 
       const res = await axios.get(
-        'https://duke.fieldkonnect.in/api/getMyHierarchyUsers', // ← your endpoint 
+        `${BASE_URL}api/getMyHierarchyUsers`, // ← your endpoint
         {
           headers: { Authorization: `Bearer ${token}` },
           params: {
@@ -146,7 +147,7 @@ const CustomerList = ({ route }: any) => {
     try {
       const token = store.getState()?.auth?.token;
 
-      const res = await axios.get('https://duke.fieldkonnect.in/api/getPunchin', {
+      const res = await axios.get(`${BASE_URL}api/getPunchin`, {
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: 'application/json',
@@ -229,7 +230,7 @@ const CustomerList = ({ route }: any) => {
       const token = store.getState()?.auth?.token;
 
       const res = await axios.get(
-        'https://duke.fieldkonnect.in/api/getCurrentOpenCheckin',
+        `${BASE_URL}api/getCurrentOpenCheckin`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }

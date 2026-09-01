@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -39,7 +40,7 @@ type DealerSection = {
   data: DealerRow[];
 };
 
-const API_BASE = 'https://duke.fieldkonnect.in/api';
+const API_BASE = `${BASE_URL}api`;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const now = new Date();
 const currentYear = now.getFullYear();

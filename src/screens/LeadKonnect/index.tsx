@@ -5,7 +5,7 @@ import { Dropdown } from 'react-native-element-dropdown';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { PlusAddIcon } from '../../assets/svgs/SvgsFile';
-import { getClickToCallStatusApi, getLeadsApi, getLeadStatusSourceApi, initiateClickToCallApi } from '../../api/query/LeadApi';
+import { getCallFeedbackStatusesApi, getClickToCallStatusApi, getLeadsApi, getLeadStatusSourceApi, initiateClickToCallApi, submitCallFeedbackApi } from '../../api/query/LeadApi';
 import AppText from '../../components/AppText/AppText';
 import CustomerCalendar from '../../components/CustomCalendar/CalendarPopupView';
 import { colors } from '../../utils/Colors';
@@ -79,6 +79,11 @@ const toPlivoE164 = (phone: string) => {
   return `+91${digits}`;
 };
 
+const formatCallDuration = (value: any) => {
+  const seconds = Math.max(0, Number(value) || 0);
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+};
+
 const LeadKonnect = ({ navigation }: any) => {
   const { user } = useAppSelector(state => state.auth);
   const canUsePlivoCalling = user?.call_management === true || Number(user?.call_management) === 1;
@@ -101,10 +106,16 @@ const LeadKonnect = ({ navigation }: any) => {
   const [showCal, setShowCal] = useState(false);
   const [rangeType, setRangeType] = useState('custom');
   const filterSheetRef = useRef<ActionSheetRef>(null);
+  const feedbackSheetRef = useRef<ActionSheetRef>(null);
   const [callingLeadIds, setCallingLeadIds] = useState<Set<number | string>>(new Set());
   const [callWaiting, setCallWaiting] = useState({ visible: false, leadName: '', phase: 'Connecting to Plivo...' });
+  const [feedbackStatuses, setFeedbackStatuses] = useState<any[]>([]);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [callFeedback, setCallFeedback] = useState<any>({ callLogId: '', leadName: '', duration: 0, statusId: '', message: '' });
   const callPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const terminalHandledRef = useRef(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -118,15 +129,18 @@ const LeadKonnect = ({ navigation }: any) => {
     });
   }, [canUsePlivoCalling, navigation]);
 
-  const closeCallWaiting = useCallback(() => {
+  const stopCallTracking = useCallback(() => {
     if (callPollRef.current) clearInterval(callPollRef.current);
     if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
     callPollRef.current = null;
     callTimeoutRef.current = null;
+  }, []);
+
+  const closeCallWaiting = useCallback(() => {
     setCallWaiting(prev => ({ ...prev, visible: false }));
   }, []);
 
-  useEffect(() => closeCallWaiting, [closeCallWaiting]);
+  useEffect(() => stopCallTracking, [stopCallTracking]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -193,6 +207,52 @@ const LeadKonnect = ({ navigation }: any) => {
     });
   };
 
+  const loadFeedbackStatuses = useCallback(async () => {
+    try {
+      setFeedbackLoading(true);
+      const response = await getCallFeedbackStatusesApi();
+      const records = response?.data?.data || [];
+      const options = (Array.isArray(records) ? records : []).map((status: any) => ({
+        label: status?.display_name || status?.status_name || status?.name || 'Status',
+        value: status?.id,
+      })).filter((status: any) => status.value !== undefined && status.value !== null);
+      setFeedbackStatuses(options);
+      return options;
+    } catch (error: any) {
+      Alert.alert('Unable to load statuses', error?.response?.data?.message || 'Please check your connection and try again.');
+      return [];
+    } finally {
+      setFeedbackLoading(false);
+    }
+  }, []);
+
+  const openCallFeedback = useCallback(async (callLogId: string | number, leadName: string, duration: any) => {
+    setCallFeedback({ callLogId, leadName, duration: Number(duration) || 0, statusId: '', message: '' });
+    feedbackSheetRef.current?.show();
+    if (!feedbackStatuses.length) await loadFeedbackStatuses();
+  }, [feedbackStatuses.length, loadFeedbackStatuses]);
+
+  const submitCallFeedback = async () => {
+    const message = String(callFeedback.message || '').trim();
+    if (!callFeedback.statusId || !message || feedbackSubmitting) return;
+
+    try {
+      setFeedbackSubmitting(true);
+      await submitCallFeedbackApi({
+        call_log_id: callFeedback.callLogId,
+        feedback_status_id: callFeedback.statusId,
+        message,
+      });
+      feedbackSheetRef.current?.hide();
+      setCallFeedback({ callLogId: '', leadName: '', duration: 0, statusId: '', message: '' });
+      Alert.alert('Call record saved', 'The call status and notes have been updated.');
+    } catch (error: any) {
+      Alert.alert('Unable to save call record', error?.response?.data?.message || 'Please try again.');
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  };
+
   const handlePlivoCall = async (item: any) => {
     const phone = toPlivoE164(item?.contact?.phone_number || item?.phone || '');
     if (!phone) return;
@@ -203,6 +263,8 @@ const LeadKonnect = ({ navigation }: any) => {
     }
 
     const leadId = item?.id || item?.lead_id || 'lead';
+    stopCallTracking();
+    terminalHandledRef.current = false;
     setCallingState(leadId, true);
     setCallWaiting({
       visible: true,
@@ -221,33 +283,51 @@ const LeadKonnect = ({ navigation }: any) => {
       setCallWaiting(prev => ({ ...prev, phase: 'Please wait. Your phone will ring shortly.' }));
 
       if (!callLogId) {
-        callTimeoutRef.current = setTimeout(closeCallWaiting, 8000);
+        callTimeoutRef.current = setTimeout(() => {
+          closeCallWaiting();
+          setCallingState(leadId, false);
+        }, 8000);
         return;
       }
 
       callPollRef.current = setInterval(async () => {
         try {
           const statusResponse = await getClickToCallStatusApi(callLogId);
-          const callStatus = String(statusResponse?.data?.data?.status || '').toLowerCase();
-          const isAnswered = Boolean(statusResponse?.data?.data?.answered);
+          const statusData = statusResponse?.data?.data || {};
+          const callStatus = String(statusData?.status || '').toLowerCase();
+          const isAnswered = Boolean(statusData?.answered);
+          const isCompleted = Boolean(statusData?.completed) || ['completed', 'hangup', 'failed', 'busy', 'no-answer', 'timeout', 'cancel', 'canceled'].includes(callStatus);
+
+          if (isCompleted && !terminalHandledRef.current) {
+            terminalHandledRef.current = true;
+            stopCallTracking();
+            closeCallWaiting();
+            setCallingState(leadId, false);
+            if (statusData?.requires_feedback !== false) {
+              setTimeout(() => openCallFeedback(callLogId, item?.contact?.name || item?.name || 'Customer', statusData?.duration), 300);
+            }
+            return;
+          }
+
           if (callStatus.includes('ring') || isAnswered || callStatus === 'agent-answered') {
             setCallWaiting(prev => ({ ...prev, phase: 'Your phone is ringing...' }));
             setTimeout(closeCallWaiting, 700);
-          } else if (['failed', 'busy', 'cancel', 'timeout'].includes(callStatus)) {
-            closeCallWaiting();
-            Alert.alert('Call unavailable', 'The call could not be connected. Please try again.');
           }
-        } catch (_) {
+        } catch {
           // Ignore a transient polling failure and retry on the next interval.
         }
       }, 1500);
 
       callTimeoutRef.current = setTimeout(() => {
+        stopCallTracking();
         closeCallWaiting();
-        Alert.alert('Still waiting?', 'The call is taking longer than expected. Please try again if your phone does not ring.');
-      }, 45000);
+        setCallingState(leadId, false);
+        Alert.alert('Call tracking stopped', 'The call status could not be confirmed. You can check it in Call History.');
+      }, 60 * 60 * 1000);
     } catch (error: any) {
+      stopCallTracking();
       closeCallWaiting();
+      setCallingState(leadId, false);
       const status = error?.response?.status;
       if (status === 404 || status === 405) {
         openDialer(phone);
@@ -258,8 +338,6 @@ const LeadKonnect = ({ navigation }: any) => {
         );
         openDialer(phone);
       }
-    } finally {
-      setCallingState(leadId, false);
     }
   };
 
@@ -371,6 +449,75 @@ const LeadKonnect = ({ navigation }: any) => {
           </View>
         </View>
       </ActionSheet>
+
+      <ActionSheet ref={feedbackSheetRef} gestureEnabled={false} containerStyle={styles.feedbackSheetContainer} keyboardHandlerEnabled>
+        <View style={styles.feedbackContent}>
+          <View style={styles.feedbackHandle} />
+          <View style={styles.feedbackHeader}>
+            <View style={styles.feedbackHeaderCopy}>
+              <AppText size={22} color="#202432" family="InterBold">Call Ended</AppText>
+              <AppText size={15} color="#667085" family="InterMedium" style={styles.feedbackCustomer}>
+                {callFeedback.leadName} · {formatCallDuration(callFeedback.duration)}
+              </AppText>
+            </View>
+            <Pressable accessibilityRole="button" accessibilityLabel="Close call feedback" style={styles.closeButton} onPress={() => feedbackSheetRef.current?.hide()}>
+              <AppText size={24} color="#566078">×</AppText>
+            </Pressable>
+          </View>
+
+          <View style={styles.feedbackLabelRow}>
+            <AppText size={13} color="#566078" family="InterBold">CALL STATUS <AppText size={13} color="#E5485D" family="InterBold">*</AppText></AppText>
+            <AppText size={12} color="#98A2B3" family="InterMedium">Synced from Web CRM</AppText>
+          </View>
+          <Dropdown
+            style={styles.feedbackDropdown}
+            data={feedbackStatuses}
+            labelField="label"
+            valueField="value"
+            value={callFeedback.statusId}
+            onChange={status => setCallFeedback((previous: any) => ({ ...previous, statusId: status.value }))}
+            placeholder={feedbackLoading ? 'Loading statuses...' : 'Select call status'}
+            placeholderStyle={styles.feedbackPlaceholder}
+            selectedTextStyle={styles.feedbackSelectedText}
+            disable={feedbackLoading}
+          />
+          {!feedbackLoading && feedbackStatuses.length === 0 && (
+            <Pressable onPress={loadFeedbackStatuses} style={styles.retryStatuses}>
+              <AppText size={13} color={colors.blue} family="InterBold">Retry loading statuses</AppText>
+            </Pressable>
+          )}
+
+          <AppText size={13} color="#566078" family="InterBold" style={styles.feedbackNotesLabel}>
+            NOTES <AppText size={13} color="#E5485D" family="InterBold">*</AppText>
+          </AppText>
+          <TextInput
+            value={callFeedback.message}
+            onChangeText={message => setCallFeedback((previous: any) => ({ ...previous, message }))}
+            placeholder="What happened on this call?"
+            placeholderTextColor="#98A2B3"
+            multiline
+            maxLength={1000}
+            textAlignVertical="top"
+            style={styles.feedbackNotesInput}
+          />
+
+          <Pressable
+            accessibilityRole="button"
+            disabled={!callFeedback.statusId || !String(callFeedback.message || '').trim() || feedbackSubmitting}
+            onPress={submitCallFeedback}
+            style={({ pressed }) => [
+              styles.feedbackSubmit,
+              (!callFeedback.statusId || !String(callFeedback.message || '').trim() || feedbackSubmitting) && styles.feedbackSubmitDisabled,
+              pressed && styles.feedbackSubmitPressed,
+            ]}
+          >
+            {feedbackSubmitting
+              ? <ActivityIndicator color="white" size="small" />
+              : <AppText size={16} color="white" family="InterBold">Save Call Record</AppText>}
+          </Pressable>
+        </View>
+      </ActionSheet>
+
       <Modal visible={callWaiting.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={closeCallWaiting}>
         <View style={styles.callWaitingBackdrop}>
           <View style={styles.callWaitingCard}>
@@ -500,6 +647,22 @@ const styles = StyleSheet.create({
   callWaitingLoader: { marginTop: 24, marginBottom: 13 },
   callWaitingMessage: { textAlign: 'center', lineHeight: 21, minHeight: 42 },
   callWaitingClose: { marginTop: 20, paddingHorizontal: 24, paddingVertical: 11, borderRadius: 18, backgroundColor: '#EDF3FF' },
+  feedbackSheetContainer: { borderTopLeftRadius: 28, borderTopRightRadius: 28 },
+  feedbackContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 34 : 24 },
+  feedbackHandle: { width: 72, height: 5, borderRadius: 3, backgroundColor: '#CCD5E4', alignSelf: 'center', marginBottom: 22 },
+  feedbackHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 27 },
+  feedbackHeaderCopy: { flex: 1 },
+  feedbackCustomer: { marginTop: 6 },
+  feedbackLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 },
+  feedbackDropdown: { height: 56, borderWidth: 1.5, borderColor: '#C9D4E5', borderRadius: 13, paddingHorizontal: 15, backgroundColor: '#F8FAFD' },
+  feedbackPlaceholder: { color: '#98A2B3', fontSize: 15, fontFamily: fonts.InterMedium },
+  feedbackSelectedText: { color: '#202432', fontSize: 15, fontFamily: fonts.InterSemiBold },
+  retryStatuses: { alignSelf: 'flex-start', paddingVertical: 9 },
+  feedbackNotesLabel: { marginTop: 22, marginBottom: 9 },
+  feedbackNotesInput: { minHeight: 132, maxHeight: 180, borderWidth: 1.5, borderColor: '#C9D4E5', borderRadius: 13, backgroundColor: '#F8FAFD', paddingHorizontal: 15, paddingTop: 15, paddingBottom: 15, color: '#202432', fontSize: 15, lineHeight: 21, fontFamily: fonts.InterRegular },
+  feedbackSubmit: { height: 56, marginTop: 24, borderRadius: 14, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  feedbackSubmitDisabled: { backgroundColor: '#B8C4D8' },
+  feedbackSubmitPressed: { opacity: 0.86 },
   container: { flex: 1, backgroundColor: '#F4F6FA' },
   listContent: { flex: 1, padding: 16, paddingBottom: 0 },
   searchRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },

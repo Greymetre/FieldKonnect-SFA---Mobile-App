@@ -21,6 +21,7 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.fieldkonnect.sfa.BuildConfig
 import com.fieldkonnect.sfa.MainActivity
 import com.fieldkonnect.sfa.R
 import com.google.android.gms.location.LocationServices
@@ -401,7 +402,7 @@ class LocationForegroundService : Service() {
 
   companion object {
     private const val TAG = "FieldKonnectLocation"
-    private const val BASE_URL = "https://duke.fieldkonnect.in/"
+    private val BASE_URL = BuildConfig.API_BASE_URL
     private const val CHANNEL_ID = "fieldkonnect_live_location"
     private const val NOTIFICATION_ID = 9301
     private const val API_RESULT_NOTIFICATION_ID_BASE = 9400

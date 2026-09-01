@@ -77,5 +77,14 @@ export const initiateClickToCallApi = (payload: {
 export const getClickToCallStatusApi = (callLogId: string | number) =>
   axiosClient.get(`${API_ENDPOINT.CLICK_TO_CALL_STATUS}/${callLogId}/status`);
 
+export const getCallFeedbackStatusesApi = () =>
+  axiosClient.get('api/call-feedback-statuses');
+
+export const submitCallFeedbackApi = (payload: {
+  call_log_id: string | number;
+  feedback_status_id: string | number;
+  message: string;
+}) => axiosClient.post('api/call-feedback', payload);
+
 export const getMyCallHistoryApi = (params?: Record<string, any>) =>
   axiosClient.get(API_ENDPOINT.MY_CALL_HISTORY, { params });

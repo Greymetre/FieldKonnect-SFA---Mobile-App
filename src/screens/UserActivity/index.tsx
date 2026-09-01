@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -201,7 +202,7 @@ const UserActivityScreen = ({ navigation, route }: any) => {
       if (!token) return;
 
       const response = await axios.get(
-        'https://duke.fieldkonnect.in/api/designations',
+        `${BASE_URL}api/designations`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -245,7 +246,7 @@ const UserActivityScreen = ({ navigation, route }: any) => {
       if (!token) return;
 
       const response = await fetch(
-        'https://duke.fieldkonnect.in/api/user-attendance-zone-branch',
+        `${BASE_URL}api/user-attendance-zone-branch`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -282,7 +283,7 @@ const UserActivityScreen = ({ navigation, route }: any) => {
         end_date: formatYYYYMMDD(endDate)
       }, 'sadjfhaksjhdfkja', page)
       const response = await fetch(
-        'https://duke.fieldkonnect.in/api/reporting/users',
+        `${BASE_URL}api/reporting/users`,
         {
           method: 'POST',
           headers: {
@@ -350,7 +351,7 @@ const UserActivityScreen = ({ navigation, route }: any) => {
       if (!token) return;
 
       const response = await axios.get(
-        `https://duke.fieldkonnect.in/api/getHierarchyOrderStats`,
+        `${BASE_URL}api/getHierarchyOrderStats`,
         {
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
           params: {

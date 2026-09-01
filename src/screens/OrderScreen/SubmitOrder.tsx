@@ -10,7 +10,7 @@ import Toast from 'react-native-toast-message';
 import store from '../../components/redux/Store';
 import { Dropdown } from 'react-native-element-dropdown';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
-import axiosClient from '../../api/AxiosClient';
+import axiosClient, { BASE_URL } from '../../api/AxiosClient';
 import { API_ENDPOINT } from '../../api/ApiUrls';
 
 
@@ -664,7 +664,7 @@ const SubmitOrder = () => {
             console.log('Order Payload:', body);
 
             const res = await fetch(
-                'https://duke.fieldkonnect.in/api/insertOrder',
+                `${BASE_URL}api/insertOrder`,
                 {
                     method: 'POST',
                     headers: {

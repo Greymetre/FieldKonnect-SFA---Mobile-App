@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { ArrowDownIcon } from '../../assets/svgs/SvgsFile';
@@ -123,7 +124,7 @@ const OrderHistoryDetailsScreen = () => {
 
         try {
             const response = await fetch(
-                `https://duke.fieldkonnect.in/api/getOrderDetails?order_id=${orderId}`,
+                `${BASE_URL}api/getOrderDetails?order_id=${orderId}`,
                 {
                     method: 'GET',
                     headers: {

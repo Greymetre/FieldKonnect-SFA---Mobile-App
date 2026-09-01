@@ -26,7 +26,7 @@ const dateLabel = (value?: string) => value
   : '-';
 
 const CallHistory = ({ navigation }: any) => {
-  const [period, setPeriod] = useState('monthly');
+  const [period, setPeriod] = useState('today');
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'connected' | 'not_connected'>('all');
@@ -78,10 +78,14 @@ const CallHistory = ({ navigation }: any) => {
         </View>
 
         <View style={styles.summaryGrid}>
-          <Summary label="Attempts" value={summary.attempts} color="#15213A" />
-          <Summary label="Connected" value={summary.connected} color="#12B981" />
-          <Summary label="Not Connected" value={summary.not_connected} color="#F05268" />
-          <Summary label="Duration" value={durationLabel(summary.duration)} color={colors.blue} />
+          <View style={styles.summaryRow}>
+            <Summary label="Attempts" value={summary.attempts} color="#15213A" />
+            <Summary label="Connected" value={summary.connected} color="#12B981" />
+          </View>
+          <View style={styles.summaryRow}>
+            <Summary label="Not Connected" value={summary.not_connected} color="#F05268" />
+            <Summary label="Duration" value={durationLabel(summary.duration)} color={colors.blue} />
+          </View>
         </View>
 
         <View style={styles.searchBox}>
@@ -144,16 +148,16 @@ const styles = StyleSheet.create({
   fixedContent: { backgroundColor: '#F3F6FB', paddingHorizontal: 16, paddingTop: 12, borderBottomWidth: 1, borderBottomColor: '#DFE7F2' },
   content: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 36 },
   periodRow: { flexDirection: 'row', gap: 8 }, periodButton: { flex: 1, height: 38, borderRadius: 12, borderWidth: 1, borderColor: '#D9E2F1', backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' }, periodButtonActive: { backgroundColor: colors.blue, borderColor: colors.blue },
-  summaryGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 }, summaryCard: { width: '48.5%', minHeight: 90, borderRadius: 18, borderWidth: 1, borderColor: '#D9E4F3', backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' }, summaryText: { marginTop: 5, letterSpacing: .5, textAlign: 'center' },
+  summaryGrid: { gap: 8, marginTop: 10 }, summaryRow: { flexDirection: 'row', gap: 8 }, summaryCard: { flex: 1, height: 70, borderRadius: 14, borderWidth: 1, borderColor: '#D9E4F3', backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' }, summaryText: { marginTop: 2, letterSpacing: .5, textAlign: 'center' },
   searchBox: { height: 44, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: '#D9E4F3', backgroundColor: 'white', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, gap: 9 }, searchInput: { flex: 1, color: '#15213A', fontFamily: fonts.InterMedium, fontSize: 14, paddingVertical: 0 },
   filterRow: { flexDirection: 'row', gap: 7, marginTop: 9, marginBottom: 10 }, filterChip: { flex: 1, alignItems: 'center', paddingHorizontal: 7, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: '#D9E4F3', backgroundColor: 'white' }, filterChipActive: { borderColor: colors.blue, backgroundColor: '#EAF3FF' },
-  loader: { marginTop: 60 }, callCard: { borderRadius: 16, borderWidth: 1, borderColor: '#D8E4F4', backgroundColor: 'white', padding: 14, marginBottom: 10 },
+  loader: { marginTop: 60 }, callCard: { borderRadius: 16, borderWidth: 1, borderColor: '#D8E4F4', backgroundColor: 'white', padding: 12, marginBottom: 8 },
   callTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, nameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 14, borderWidth: 1 }, connectedBadge: { backgroundColor: '#E7F9F3', borderColor: '#8CDEC4' }, notConnectedBadge: { backgroundColor: '#FFF0F2', borderColor: '#F5B0BB' },
-  meta: { marginTop: 10 }, company: { marginTop: 7 }, remark: { marginTop: 12, lineHeight: 20 }, player: { height: 50, borderRadius: 14, backgroundColor: '#EDF4FE', marginTop: 14, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  meta: { marginTop: 8 }, company: { marginTop: 5 }, remark: { marginTop: 9, lineHeight: 19 }, player: { height: 46, borderRadius: 13, backgroundColor: '#EDF4FE', marginTop: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
   playCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center', paddingLeft: 2 }, wave: { flex: 1, height: 24, flexDirection: 'row', alignItems: 'center', gap: 4 }, waveLine: { width: 3, height: 12, borderRadius: 2, backgroundColor: '#74A9E9' },
-  noRecording: { height: 44, borderRadius: 13, backgroundColor: '#F4F6F9', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
-  viewDetails: { minHeight: 46, marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#E0E8F4', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
+  noRecording: { height: 40, borderRadius: 12, backgroundColor: '#F4F6F9', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
+  viewDetails: { minHeight: 40, marginTop: 9, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E0E8F4', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
   empty: { minHeight: 180, alignItems: 'center', justifyContent: 'center' },
 });
 

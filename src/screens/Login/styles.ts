@@ -24,11 +24,6 @@ export const styles = StyleSheet.create({
         marginTop: 58,
         width: "100%",
     },
-    dukeLogo:{
-        width: 80,
-        height: 49,
-        marginTop: 28,
-    },
     center:{
         justifyContent:"center",
         alignItems: 'center',

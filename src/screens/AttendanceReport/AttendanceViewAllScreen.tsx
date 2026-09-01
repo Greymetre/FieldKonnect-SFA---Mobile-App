@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -97,7 +98,7 @@ const AttendanceViewAllScreen = ({ navigation, route }: any) => {
     const token = store.getState()?.auth?.token;
     try {
       const res = await fetch(
-        'https://duke.fieldkonnect.in/api/user-attendance-zone-branch',
+        `${BASE_URL}api/user-attendance-zone-branch`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -235,7 +236,7 @@ const AttendanceViewAllScreen = ({ navigation, route }: any) => {
   const fetchAttendanceWithFilters = async (customFilters: any) => {
     const token = store.getState()?.auth?.token;
     try {
-      let url = 'https://duke.fieldkonnect.in/api/today-attendance-zone';
+      let url = `${BASE_URL}api/today-attendance-zone`;
       const queryParams: string[] = [];
 
       if (customFilters.zone) {

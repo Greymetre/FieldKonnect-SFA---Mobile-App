@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, BackHandler, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { ArrowDownIcon } from '../../assets/svgs/SvgsFile';
@@ -129,7 +130,7 @@ const ProductCatalogue = ({ navigation, route }: ProductCatalogueProps) => {
     const fetchSegments = async () => {
         try {
             const res = await fetch(
-                `https://duke.fieldkonnect.in/api/getCategoryList`,
+                `${BASE_URL}api/getCategoryList`,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,
@@ -163,8 +164,8 @@ const ProductCatalogue = ({ navigation, route }: ProductCatalogueProps) => {
         try {
             const res = await fetch(
                 !selectedSegmentId 
-                ? `https://duke.fieldkonnect.in/api/getSubCategoryList`
-                : `https://duke.fieldkonnect.in/api/getSubCategoryList?category_id=${selectedSegmentId}`,
+                ? `${BASE_URL}api/getSubCategoryList`
+                : `${BASE_URL}api/getSubCategoryList?category_id=${selectedSegmentId}`,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,
@@ -200,8 +201,8 @@ const ProductCatalogue = ({ navigation, route }: ProductCatalogueProps) => {
 
         try {
             const url = subcategoryId
-                ? `https://duke.fieldkonnect.in/api/getProductList?subcategory_id=${subcategoryId}`
-                : `https://duke.fieldkonnect.in/api/getProductList`;
+                ? `${BASE_URL}api/getProductList?subcategory_id=${subcategoryId}`
+                : `${BASE_URL}api/getProductList`;
 
             const res = await fetch(url, {
                 headers: {
@@ -236,7 +237,7 @@ const ProductCatalogue = ({ navigation, route }: ProductCatalogueProps) => {
     const fetchProductDetails = async (productId: number | string) => {
         try {
             const res = await fetch(
-                `https://duke.fieldkonnect.in/api/getProductDetails?product_id=${productId}`,
+                `${BASE_URL}api/getProductDetails?product_id=${productId}`,
                 {
                     headers: {
                         Authorization: `Bearer ${token}`,

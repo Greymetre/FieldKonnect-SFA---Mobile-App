@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -50,7 +51,7 @@ type SalesSection = {
   data: SalesRow[];
 };
 
-const API_BASE = 'https://duke.fieldkonnect.in/api';
+const API_BASE = `${BASE_URL}api`;
 const COLUMN_WIDTHS = [220, 180, 180, 120, 130, 170, 160, 90, 160, 110, 140];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const now = new Date();

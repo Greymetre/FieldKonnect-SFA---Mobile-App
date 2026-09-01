@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, View, StyleSheet, Platform, ActivityIndicator, RefreshControl } from 'react-native';
 import AppText from '../../components/AppText/AppText';
@@ -20,7 +21,7 @@ interface BeatItem {
     is_today: boolean;
 }
 
-const API_BASE = 'https://duke.fieldkonnect.in/api';
+const API_BASE = `${BASE_URL}api`;
 
 const BeatsScreen = () => {
     const navigation = useNavigation<NavigationProp<ParamListBase>>();

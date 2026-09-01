@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Keyboard, Pressable, TextInput, View } from 'react-native';
 import { ArrowDownIcon, CalenderIcon, CrossIcon } from '../../assets/svgs/SvgsFile';
@@ -167,7 +168,7 @@ const OrderList = ({ navigation }: OrderListProps) => {
                 params.append("enddate", formatYYYYMMDD(end));
             }
 
-            const url = `https://duke.fieldkonnect.in/api/getOrderList?${params.toString()}`;
+            const url = `${BASE_URL}api/getOrderList?${params.toString()}`;
 
             console.log(url, 'ORDER API');
 

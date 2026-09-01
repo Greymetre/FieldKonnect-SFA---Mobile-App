@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,7 +26,7 @@ type ActivityCounts = Record<string, number>;
 type ActivityRow = { id: number; name: string; activities: ActivityCounts; total: number };
 type ActivitySection = { title: string; data: ActivityRow[] };
 
-const API_URL = 'https://duke.fieldkonnect.in/api/attendance/promotional-activities-report';
+const API_URL = `${BASE_URL}api/attendance/promotional-activities-report`;
 const ACTIVITY_COLUMNS = [
   { key: 'mechanic_meet', label: 'Mech\nmeet' },
   { key: 'borer_meet', label: 'Borer\nmeet' },

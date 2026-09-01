@@ -1,3 +1,4 @@
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Keyboard, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { ArrowDownIcon, CrossIcon } from '../../assets/svgs/SvgsFile';
@@ -50,7 +51,7 @@ const BeatCustomerDetails = ({ route }: any) => {
 
         try {
             setLoading(true);
-            const url = `https://duke.fieldkonnect.in/api/getBeatCustomers?beat_id=${beatId}`;
+            const url = `${BASE_URL}api/getBeatCustomers?beat_id=${beatId}`;
             console.log(url, 'urlurl')
             // Optional: add search if you want server-side filtering
             // if (searchText?.trim()) url += `&search=${encodeURIComponent(searchText.trim())}`;
@@ -98,7 +99,7 @@ const BeatCustomerDetails = ({ route }: any) => {
         try {
             const token = store.getState()?.auth?.token;
 
-            const res = await axios.get('https://duke.fieldkonnect.in/api/getPunchin', {
+            const res = await axios.get(`${BASE_URL}api/getPunchin`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                     Accept: 'application/json',

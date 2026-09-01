@@ -54,21 +54,21 @@ axiosClient.interceptors.response.use(
     const status = error?.response?.status;
     const message = error?.response?.data?.message;
     const errorMsg = error?.response?.data?.error;
-    if (
-      status == 500 ||
-      message == 'Server error: Unauthenticated.' ||
-      errorMsg == 'Unauthenticated.'
-    ) {
+    const authErrorText = `${message || ''} ${errorMsg || ''}`.toLowerCase();
+    const isAuthenticationError =
+      status === 401 ||
+      authErrorText.includes('unauthenticated') ||
+      authErrorText.includes('token expired') ||
+      authErrorText.includes('invalid token');
+
+    if (isAuthenticationError) {
 
       Toast.show({
         type: 'error',
         text1: 'Session expired. Please login again',
       });
-      // navigation.navigate('LoginScreen')
-      store.dispatch(logout());
-      store.dispatch(setUser(null))
-      store.dispatch(setToken(null))
-      // ✅ clear redux auth
+      store.dispatch(setUser(null));
+      store.dispatch(setToken(null));
       store.dispatch(logout());
 
       // ✅ navigate to login

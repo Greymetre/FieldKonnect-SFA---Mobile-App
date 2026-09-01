@@ -1,4 +1,5 @@
 import { View, FlatList, Pressable, ActivityIndicator, TextInput, TouchableWithoutFeedback, Keyboard, Modal, ScrollView } from 'react-native'
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useState } from 'react'
 import { styles } from './styles'
 import { rw } from '../../utils/responsive'
@@ -87,7 +88,7 @@ const TourPlanPage = ({ navigation }: TourPlanPageProps) => {
     if (selectedZone?.id) params.append('zone_id', String(selectedZone.id));
     if (selectedDesignations.length > 0) params.append('designation', selectedDesignations.join(','));
 
-    return `https://duke.fieldkonnect.in/api/tour/userlist?${params.toString()}`;
+    return `${BASE_URL}api/tour/userlist?${params.toString()}`;
   }, [selectedZone, selectedDesignations]);
 
   const resetTourUserList = () => {
@@ -122,7 +123,7 @@ const TourPlanPage = ({ navigation }: TourPlanPageProps) => {
 
     try {
       const response = await fetch(
-        'https://duke.fieldkonnect.in/api/designations',
+        `${BASE_URL}api/designations`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -167,7 +168,7 @@ const TourPlanPage = ({ navigation }: TourPlanPageProps) => {
 
     try {
       const response = await fetch(
-        'https://duke.fieldkonnect.in/api/user-attendance-zone-branch',
+        `${BASE_URL}api/user-attendance-zone-branch`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

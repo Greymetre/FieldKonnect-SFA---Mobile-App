@@ -1,4 +1,5 @@
 import { View, Text, ScrollView, FlatList, Pressable, Modal, Alert, ActivityIndicator, TextInput, Linking, Platform, StyleSheet } from 'react-native'
+import { BASE_URL } from '../../api/AxiosClient';
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { rw } from '../../utils/responsive'
 import AppText from '../../components/AppText/AppText'
@@ -152,7 +153,7 @@ const AttendanceReport = ({ navigation, route }: any) => {
 
     try {
       const response = await fetch(
-        'https://duke.fieldkonnect.in/api/designations',
+        `${BASE_URL}api/designations`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -197,7 +198,7 @@ const AttendanceReport = ({ navigation, route }: any) => {
 
     try {
       const response = await fetch(
-        'https://duke.fieldkonnect.in/api/user-attendance-zone-branch',
+        `${BASE_URL}api/user-attendance-zone-branch`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
