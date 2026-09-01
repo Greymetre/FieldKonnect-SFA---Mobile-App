@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "255829603340",
+    "project_id": "fieldkonnect-duke",
+    "storage_bucket": "fieldkonnect-duke.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:255829603340:android:21c6cc8265dab9c0bbea29",
+        "android_client_info": {
+          "package_name": "com.fieldkonnect.duke"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB2u9nPbUN_xr3Ab3cFZUyXD5JBX2DaVGc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
