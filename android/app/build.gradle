@@ -99,7 +99,7 @@ android {
         // Keep this higher than the previously distributed build so Android can
         // install it as an update instead of rejecting it as a downgrade.
         versionCode 2
-        versionName "1.3"
+        versionName "1.2"
         buildConfigField "String", "API_BASE_URL", '"https://sfa.fieldkonnect.io/"'
     }
     packagingOptions {

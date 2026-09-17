@@ -86,5 +86,14 @@ export const submitCallFeedbackApi = (payload: {
   message: string;
 }) => axiosClient.post('api/call-feedback', payload);
 
+export const getPendingCallFeedbackApi = () =>
+  axiosClient.get('api/pending-call-feedback');
+
+export const getCallTranscriptApi = (callLogId: string | number) =>
+  axiosClient.get(`api/call-transcript/${callLogId}`);
+
+export const generateCallTranscriptApi = (callLogId: string | number, regenerate = false) =>
+  axiosClient.post(`api/call-transcript/${callLogId}`, { regenerate });
+
 export const getMyCallHistoryApi = (params?: Record<string, any>) =>
   axiosClient.get(API_ENDPOINT.MY_CALL_HISTORY, { params });

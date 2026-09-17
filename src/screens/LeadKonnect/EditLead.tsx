@@ -8,9 +8,11 @@ import { fonts } from '../../utils/typography';
 import { getLeadDetailsApi, getLeadStatusSourceApi, updateLeadApi } from '../../api/query/LeadApi';
 import { useGetPincodeListAPi } from '../../api/query/CustomerApi';
 
+const OTHER_FIELDS = ['others_1', 'others_2', 'others_3', 'others_4', 'others_5'];
+
 const EditLead = ({ route, navigation }: any) => {
   const lead = route?.params?.lead || {};
-  const [form, setForm] = useState<any>({ assignTo: '', firm: '', customer: '', website: '', mobile: '', email: '', address: '', pin: '', city: '', state: '', district: '', note: '', status: 0, source: '', pincodeId: '', cityId: '', stateId: '', districtId: '' });
+  const [form, setForm] = useState<any>({ assignTo: '', firm: '', customer: '', website: '', mobile: '', email: '', address: '', pin: '', city: '', state: '', district: '', note: '', status: 0, source: '', pincodeId: '', cityId: '', stateId: '', districtId: '', designation: '', alternateNumber: '', revenue: '', place: '', other: '', others_1: '', others_2: '', others_3: '', others_4: '', others_5: '' });
   const [users, setUsers] = useState<any[]>([]);
   const [statuses, setStatuses] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
@@ -19,7 +21,7 @@ const EditLead = ({ route, navigation }: any) => {
   const [cityOptions, setCityOptions] = useState<any[]>([]);
   const { mutateAsync: getPincodeDetails } = useGetPincodeListAPi();
   const [atCustomerPlace, setAtCustomerPlace] = useState(false);
-  const update = (key: string, value: any) => setForm(current => ({ ...current, [key]: value }));
+  const update = (key: string, value: any) => setForm((current: any) => ({ ...current, [key]: value }));
 
   const resolvePincode = async (pin: string) => {
     if (pin.length !== 6) return;
@@ -49,7 +51,7 @@ const EditLead = ({ route, navigation }: any) => {
           ...(options.status || []).map((item: any) => ({ label: item.display_name, value: item.id })),
         ]);
         setSources((options.source || []).map((item: any) => ({ label: item.value || item.key, value: item.key || item.value })));
-        setForm({ assignTo: data.assign_user_id || '', firm: data.company_name || '', customer: data.contact_name || '', website: data.website || '', mobile: data.phone_number || '', email: data.email || '', address: data.address || '', pin: data.pincode || '', city: data.city || '', state: data.state || '', district: data.district || '', note: data.note || '', status: data.status_id ?? 0, source: data.lead_source || '', pincodeId: data.pincode_id || '', cityId: data.city_id || '', stateId: data.state_id || '', districtId: data.district_id || '' });
+        setForm({ assignTo: data.assign_user_id || '', firm: data.company_name || '', customer: data.contact_name || '', website: data.website || '', mobile: data.phone_number || '', email: data.email || '', address: data.address || '', pin: data.pincode || '', city: data.city || '', state: data.state || '', district: data.district || '', note: data.note || '', status: data.status_id ?? 0, source: data.lead_source || '', pincodeId: data.pincode_id || '', cityId: data.city_id || '', stateId: data.state_id || '', districtId: data.district_id || '', designation: data.designation || '', alternateNumber: data.alternate_number || '', revenue: data.revenue_rs_cr != null ? String(data.revenue_rs_cr) : '', place: data.address2 || '', other: data.other != null ? String(data.other) : '', ...Object.fromEntries(OTHER_FIELDS.map(key => [key, data[key] || ''])) });
       } catch {
         Alert.alert('Unable to load lead', 'Please try again.');
       } finally {
@@ -70,7 +72,7 @@ const EditLead = ({ route, navigation }: any) => {
     }
     try {
       setSubmitting(true);
-      await updateLeadApi({ lead_id: lead.id, assign_to: form.assignTo, company_name: form.firm.trim(), contact_name: form.customer.trim(), website: form.website.trim(), url: form.website.trim(), phone_number: form.mobile, email: form.email.trim(), address: form.address.trim(), pincode_id: form.pincodeId, city_id: form.cityId, state_id: form.stateId, district_id: form.districtId, note: form.note.trim(), status: form.status, lead_source: form.source, on_location: atCustomerPlace ? 1 : 0 });
+      await updateLeadApi({ lead_id: lead.id, assign_to: form.assignTo, company_name: form.firm.trim(), contact_name: form.customer.trim(), website: form.website.trim(), url: form.website.trim(), phone_number: form.mobile, email: form.email.trim(), address: form.address.trim(), place: form.place.trim(), designation: form.designation.trim(), alternate_number: form.alternateNumber.trim(), revenue_rs_cr: form.revenue.trim(), other: form.other.trim(), ...Object.fromEntries(OTHER_FIELDS.map(key => [key, form[key].trim()])), pincode_id: form.pincodeId, city_id: form.cityId, state_id: form.stateId, district_id: form.districtId, note: form.note.trim(), status: form.status, lead_source: form.source, on_location: atCustomerPlace ? 1 : 0 });
       Alert.alert('Lead Updated', 'Lead details updated successfully.', [{ text: 'OK', onPress: () => navigation.goBack() }]);
     } catch (error: any) {
       const message = error?.response?.data?.message;
@@ -104,7 +106,9 @@ const EditLead = ({ route, navigation }: any) => {
         <FormSection title="Basic Information" subtitle="Business and primary contact details">
           <EditField icon="firm" label="Firm Name" value={form.firm} onChangeText={(value: string) => update('firm', value)} required />
           <EditField icon="user" label="Customer Name" value={form.customer} onChangeText={(value: string) => update('customer', value)} required />
+          <EditField icon="designation" label="Designation" value={form.designation} onChangeText={(value: string) => update('designation', value)} />
           <EditField icon="website" label="Company Website" value={form.website} onChangeText={(value: string) => update('website', value)} autoCapitalize="none" keyboardType="url" />
+          <EditField icon="rupee" label="Revenue (Rs Cr)" value={form.revenue} onChangeText={(value: string) => update('revenue', value)} keyboardType="decimal-pad" />
           <FieldLabel label="Lead Status" required />
           <Dropdown style={styles.standaloneDropdown} data={statuses} labelField="label" valueField="value" value={form.status} onChange={item => update('status', item.value)} placeholder="Select status" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
           <FieldLabel label="Lead Source" required />
@@ -113,15 +117,24 @@ const EditLead = ({ route, navigation }: any) => {
 
         <FormSection title="Contact & Communication" subtitle="Ways to connect with the customer">
           <EditField icon="phone" label="Mobile Number" value={form.mobile} onChangeText={(value: string) => update('mobile', value.replace(/[^0-9]/g, '').slice(0, 10))} keyboardType="phone-pad" required />
+          <EditField icon="phone" label="Alternate Number" value={form.alternateNumber} onChangeText={(value: string) => update('alternateNumber', value.replace(/[^0-9]/g, '').slice(0, 15))} keyboardType="phone-pad" />
           <EditField icon="email" label="Email Address" value={form.email} onChangeText={(value: string) => update('email', value)} keyboardType="email-address" autoCapitalize="none" />
         </FormSection>
 
         <FormSection title="Address Information" subtitle="Lead location and service area">
           <EditField icon="location" label="Address" value={form.address} onChangeText={(value: string) => update('address', value)} multiline />
+          <EditField icon="location" label="Place" value={form.place} onChangeText={(value: string) => update('place', value)} />
           <EditField icon="pin" label="PIN Code" value={form.pin} onChangeText={(value: string) => { const pin = value.replace(/[^0-9]/g, '').slice(0, 6); update('pin', pin); if (pin.length === 6) resolvePincode(pin); }} keyboardType="number-pad" />
           {cityOptions.length > 1 ? <><FieldLabel label="City" /><Dropdown style={styles.standaloneDropdown} data={cityOptions} labelField="label" valueField="value" value={form.cityId} onChange={item => setForm((current: any) => ({ ...current, cityId: item.value, city: item.label }))} placeholder="Select city" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} /></> : <EditField icon="city" label="City" value={form.city} editable={false} />}
           <EditField icon="state" label="State" value={form.state} editable={false} />
           <EditField icon="district" label="District" value={form.district} editable={false} />
+        </FormSection>
+
+        <FormSection title="Other Details" subtitle="Extra information captured in CRM">
+          <EditField icon="note" label="Other" value={form.other} onChangeText={(value: string) => update('other', value)} />
+          {OTHER_FIELDS.map((key, index) => (
+            <EditField key={key} icon="note" label={`Others ${index + 1}`} value={form[key]} onChangeText={(value: string) => update(key, value)} />
+          ))}
         </FormSection>
 
         <FormSection title="Additional Information" subtitle="Notes and visit context">
@@ -185,6 +198,8 @@ const EditIcon = ({ type, size = 20, color = colors.blue }: any) => {
     city: <Path d="M4 21V9h6v12M10 21V4h10v17M7 13v2m7-7v2m3-2v2m-3 4v2m3-2v2" {...line} />,
     state: <><Path d="M3 6l6-3 6 3 6-3v15l-6 3-6-3-6 3V6z" {...line} /><Path d="M9 3v15m6-12v15" {...line} /></>,
     district: <><Path d="M4 6h16M4 12h16M4 18h16" {...line} /><Circle cx="8" cy="6" r="2" fill="white" {...line} /><Circle cx="16" cy="12" r="2" fill="white" {...line} /></>,
+    designation: <><Rect x="3" y="7" width="18" height="13" rx="2" {...line} /><Path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 13h18" {...line} /></>,
+    rupee: <Path d="M7 4h10M7 8h10M9 4c6 0 6 8 0 8H7l8 8" {...line} />,
     note: <><Path d="M4 3h16v14l-4 4H4V3z" {...line} /><Path d="M16 21v-4h4M8 8h8m-8 4h6" {...line} /></>,
     save: <><Path d="M4 3h14l2 2v16H4V3z" {...line} /><Path d="M8 3v6h8V3M8 21v-7h8v7" {...line} /></>,
   };

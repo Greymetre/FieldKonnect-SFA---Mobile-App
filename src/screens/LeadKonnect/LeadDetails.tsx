@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Linking, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { Dropdown } from 'react-native-element-dropdown';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -34,9 +34,23 @@ const mapLeadData = (lead: any) => ({
   stateId: lead?.state_id || '',
   district: lead?.district || '',
   districtId: lead?.district_id || '',
+  assignUserName: lead?.assign_user_name || '',
+  designation: lead?.designation || lead?.contact?.title || '',
+  alternateNumber: lead?.alternate_number || '',
+  revenue: lead?.revenue_rs_cr ?? '',
+  address1: lead?.address1 || '',
+  address2: lead?.address2 || '',
+  otherDetails: Array.isArray(lead?.other_details) ? lead.other_details : [],
+  contacts: Array.isArray(lead?.contacts) ? lead.contacts : [],
+  files: Array.isArray(lead?.files) ? lead.files : [],
 });
 
 const shown = (value: any, placeholder = 'Not available') => String(value || '').trim() || placeholder;
+const fieldValue = (value: any) => {
+  const text = String(value ?? '').trim();
+  return text && text.toUpperCase() !== 'N/A' ? text : '';
+};
+const formatFileSize = (bytes: any) => `${(Number(bytes || 0) / 1024).toFixed(1)} KB`;
 
 const formatTaskDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const displayTaskDate = (date: Date) => date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -380,22 +394,41 @@ const LeadDetails = ({ route, navigation }: any) => {
         </View>
       </View>
 
-      <Section title="Contact Information">
-        <DetailRow icon="phone" label="Mobile Number" value={shown(data.phone)} placeholder={!data.phone} />
-        <View style={styles.rowDivider} />
-        <DetailRow icon="email" label="Email Address" value={shown(data.email)} placeholder={!data.email} />
-        <View style={styles.rowDivider} />
-        <DetailRow icon="location" label="Address" value={shown(data.address)} multiline placeholder={!data.address} />
-        <View style={styles.rowDivider} />
-        <DetailRow icon="pin" label="PIN Code" value={shown(data.pin)} placeholder={!data.pin} />
+      <Section title="Lead Details">
+        <FieldGrid fields={[
+          { label: 'Lead Type', value: data.type },
+          { label: 'Firm Name', value: data.firm },
+          { label: 'Lead Source', value: data.source },
+          { label: 'Assigned To', value: data.assignUserName },
+          { label: 'Website', value: data.website, onPress: data.website ? () => Linking.openURL(/^https?:\/\//i.test(data.website) ? data.website : `https://${data.website}`) : undefined },
+          { label: 'Lead Generation Date', value: data.generated },
+          { label: 'Revenue (Rs Cr)', value: data.revenue },
+        ]} />
       </Section>
 
-      <Section title="Lead Information">
-        <View style={styles.twoColumnRow}>
-          <InfoBlock label="Lead Type" value={data.type} icon="lead" />
-          <View style={styles.verticalDivider} />
-          <InfoBlock label="Lead Source" value={shown(data.source, 'Not set')} icon="source" />
-        </View>
+      <Section title="Contact Details">
+        <FieldGrid fields={[
+          { label: 'Customer Name', value: data.customer },
+          { label: 'Designation', value: data.designation },
+          { label: 'Mobile Number', value: data.phone, onPress: data.phone ? () => Linking.openURL(`tel:${data.phone}`) : undefined },
+          { label: 'Alternate Number', value: data.alternateNumber, onPress: data.alternateNumber ? () => Linking.openURL(`tel:${data.alternateNumber}`) : undefined },
+          { label: 'Email Id', value: data.email, onPress: data.email ? () => Linking.openURL(`mailto:${data.email}`) : undefined },
+        ]} />
+      </Section>
+
+      <Section title="Address Details">
+        <FieldGrid fields={[
+          { label: 'Address', value: data.address1, fullWidth: true },
+          { label: 'Place', value: data.address2 },
+          { label: 'State', value: data.state },
+          { label: 'District', value: data.district },
+          { label: 'City', value: data.city },
+          { label: 'Pincode', value: data.pin },
+        ]} />
+      </Section>
+
+      <Section title="Other Details">
+        <FieldGrid fields={data.otherDetails.map((item: any) => ({ label: item?.label, value: item?.value }))} />
       </Section>
 
       <Section title="Note">
@@ -403,6 +436,45 @@ const LeadDetails = ({ route, navigation }: any) => {
           <DetailIcon type="note" />
           <AppText size={14} color={data.note ? '#4F586D' : '#A7ADBA'} family="InterRegular" style={styles.noteText}>{shown(data.note, 'No note added')}</AppText>
         </View>
+      </Section>
+
+      {data.contacts.length > 0 && (
+        <Section title={`Contacts (${data.contacts.length})`}>
+          {data.contacts.map((contact: any, index: number) => (
+            <View key={contact?.id ?? index}>
+              {index > 0 && <View style={styles.listDivider} />}
+              <AppText size={15} color="#30384A" family="InterBold">{shown(contact?.name, 'Unnamed contact')}</AppText>
+              {!!fieldValue(contact?.title) && <AppText size={13} color="#8991A3" family="InterMedium" style={styles.contactMeta}>{contact.title}</AppText>}
+              {!!fieldValue(contact?.phone_number) && (
+                <Pressable style={styles.contactLink} onPress={() => Linking.openURL(`tel:${contact.phone_number}`)}>
+                  <DetailIcon type="phone" size={16} />
+                  <AppText size={14} color={colors.blue} family="InterMedium">{contact.phone_number}</AppText>
+                </Pressable>
+              )}
+              {!!fieldValue(contact?.email) && (
+                <Pressable style={styles.contactLink} onPress={() => Linking.openURL(`mailto:${contact.email}`)}>
+                  <DetailIcon type="email" size={16} />
+                  <AppText size={14} color={colors.blue} family="InterMedium">{contact.email}</AppText>
+                </Pressable>
+              )}
+            </View>
+          ))}
+        </Section>
+      )}
+
+      <Section title="Files">
+        {data.files.length ? data.files.map((file: any, index: number) => (
+          <View key={file?.id ?? index}>
+            {index > 0 && <View style={styles.listDivider} />}
+            <Pressable style={styles.fileRow} onPress={() => file?.url && Linking.openURL(file.url)}>
+              <View style={styles.detailIcon}><DetailIcon type="note" size={18} /></View>
+              <View style={styles.detailText}>
+                <AppText size={14} color="#30384A" family="InterSemiBold" numLines={1}>{shown(file?.file_name, 'File')}</AppText>
+                <AppText size={12} color="#8991A3" family="InterRegular" style={styles.contactMeta}>{`${String(file?.mime_type || '').toUpperCase()} • ${formatFileSize(file?.size)}`}</AppText>
+              </View>
+            </Pressable>
+          </View>
+        )) : <AppText size={14} color="#A7ADBA" family="InterRegular">No files uploaded</AppText>}
       </Section>
 
       <View style={styles.primaryActions}>
@@ -617,20 +689,19 @@ const Section = ({ title, children }: any) => (
   </View>
 );
 
-const DetailRow = ({ icon, label, value, multiline = false, placeholder = false }: any) => (
-  <View style={[styles.detailRow, multiline && styles.detailRowTop]}>
-    <View style={styles.detailIcon}><DetailIcon type={icon} /></View>
-    <View style={styles.detailText}>
-      <AppText size={12} color="#8991A3" family="InterSemiBold">{label}</AppText>
-      <AppText size={15} color={placeholder ? '#A7ADBA' : '#30384A'} family={placeholder ? 'InterRegular' : 'InterMedium'} style={{ marginTop: 3 }}>{value}</AppText>
-    </View>
-  </View>
-);
-
-const InfoBlock = ({ label, value, icon }: any) => (
-  <View style={styles.infoBlock}>
-    <AppText size={12} color="#8991A3" family="InterSemiBold">{label}</AppText>
-    <View style={styles.infoValue}><DetailIcon type={icon} size={18} /><AppText size={15} color="#30384A" family="InterBold">{value}</AppText></View>
+const FieldGrid = ({ fields }: { fields: { label: string; value: any; fullWidth?: boolean; onPress?: () => void }[] }) => (
+  <View style={styles.fieldGrid}>
+    {fields.map(field => {
+      const value = fieldValue(field.value);
+      return (
+        <View key={field.label} style={[styles.fieldItem, field.fullWidth && styles.fieldItemFull]}>
+          <AppText size={12} color="#8991A3" family="InterSemiBold">{field.label}</AppText>
+          <Pressable disabled={!value || !field.onPress} onPress={field.onPress}>
+            <AppText size={14} color={!value ? '#A7ADBA' : field.onPress ? colors.blue : '#30384A'} family={value ? 'InterMedium' : 'InterRegular'} style={styles.fieldValue}>{value || '-'}</AppText>
+          </Pressable>
+        </View>
+      );
+    })}
   </View>
 );
 
@@ -730,15 +801,16 @@ const styles = StyleSheet.create({
   sectionCard: { marginBottom: 14, padding: 17, borderRadius: 18, backgroundColor: 'white', borderWidth: 1, borderColor: '#E8EBF1', elevation: 2, shadowColor: '#17203A', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.055, shadowRadius: 8 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 15 },
   sectionMarker: { width: 4, height: 20, borderRadius: 2, backgroundColor: colors.blue },
-  detailRow: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 12 },
-  detailRowTop: { alignItems: 'flex-start' },
   detailIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.blue + '0D', alignItems: 'center', justifyContent: 'center' },
   detailText: { flex: 1 },
-  rowDivider: { height: 1, marginVertical: 8, marginLeft: 50, backgroundColor: '#ECEEF3' },
-  twoColumnRow: { flexDirection: 'row' },
-  infoBlock: { flex: 1, gap: 8 },
-  infoValue: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  verticalDivider: { width: 1, marginHorizontal: 14, backgroundColor: '#ECEEF3' },
+  fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 },
+  fieldItem: { width: '50%', paddingRight: 10 },
+  fieldItemFull: { width: '100%' },
+  fieldValue: { marginTop: 3 },
+  listDivider: { height: 1, marginVertical: 12, backgroundColor: '#ECEEF3' },
+  contactMeta: { marginTop: 2 },
+  contactLink: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  fileRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   noteBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 11, padding: 13, borderRadius: 12, backgroundColor: colors.blue + '08' },
   noteText: { flex: 1, lineHeight: 21 },
   primaryActions: { flexDirection: 'row', gap: 12, marginBottom: 14 },

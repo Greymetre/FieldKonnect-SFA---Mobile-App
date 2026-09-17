@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import ActionSheet, { ActionSheetRef } from 'react-native-actions-sheet';
 import { Dropdown } from 'react-native-element-dropdown';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { PlusAddIcon } from '../../assets/svgs/SvgsFile';
-import { getCallFeedbackStatusesApi, getClickToCallStatusApi, getLeadsApi, getLeadStatusSourceApi, initiateClickToCallApi, submitCallFeedbackApi } from '../../api/query/LeadApi';
+import { getCallFeedbackStatusesApi, getClickToCallStatusApi, getLeadsApi, getPendingCallFeedbackApi, getLeadStatusSourceApi, initiateClickToCallApi, submitCallFeedbackApi } from '../../api/query/LeadApi';
 import AppText from '../../components/AppText/AppText';
 import CustomerCalendar from '../../components/CustomCalendar/CalendarPopupView';
 import { colors } from '../../utils/Colors';
@@ -84,6 +84,8 @@ const formatCallDuration = (value: any) => {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
+const LEADS_PAGE_SIZE = 50;
+
 const LeadKonnect = ({ navigation }: any) => {
   const { user } = useAppSelector(state => state.auth);
   const canUsePlivoCalling = user?.call_management === true || Number(user?.call_management) === 1;
@@ -94,6 +96,11 @@ const LeadKonnect = ({ navigation }: any) => {
   const [users, setUsers] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalLeads, setTotalLeads] = useState<number | null>(null);
+  const leadsRequestRef = useRef(0);
   const [selectedStatus, setSelectedStatus] = useState<any>(-1);
   const [selectedUser, setSelectedUser] = useState<any>('');
   const [selectedSource, setSelectedSource] = useState('');
@@ -107,6 +114,8 @@ const LeadKonnect = ({ navigation }: any) => {
   const [rangeType, setRangeType] = useState('custom');
   const filterSheetRef = useRef<ActionSheetRef>(null);
   const feedbackSheetRef = useRef<ActionSheetRef>(null);
+  // Calls already prompted on this screen, so a dismissed form is not reopened on every app resume.
+  const promptedCallIdsRef = useRef<Set<string>>(new Set());
   const [callingLeadIds, setCallingLeadIds] = useState<Set<number | string>>(new Set());
   const [callWaiting, setCallWaiting] = useState({ visible: false, leadName: '', phase: 'Connecting to Plivo...' });
   const [feedbackStatuses, setFeedbackStatuses] = useState<any[]>([]);
@@ -155,10 +164,13 @@ const LeadKonnect = ({ navigation }: any) => {
     }).catch(error => console.log('Lead filter options error:', error?.response || error));
   }, []);
 
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async (pageToLoad = 1) => {
+    const requestId = ++leadsRequestRef.current;
+    const isFirstPage = pageToLoad === 1;
     try {
-      setLoading(true);
-      const params: any = { pageSize: 100 };
+      if (isFirstPage) setLoading(true);
+      else setLoadingMore(true);
+      const params: any = { pageSize: LEADS_PAGE_SIZE, page: pageToLoad };
       if (debouncedSearch) params.search = debouncedSearch;
       if (selectedUser) params.user_id = selectedUser;
       if (selectedSource) params.lead_source = selectedSource;
@@ -168,21 +180,45 @@ const LeadKonnect = ({ navigation }: any) => {
         params.end_date = formatYYYYMMDD(endDate);
       }
       const response = await getLeadsApi(params);
+      if (requestId !== leadsRequestRef.current) return;
       const payload = response?.data || {};
       const listPayload = payload?.data;
-      setLeads(Array.isArray(listPayload) ? listPayload : (listPayload?.data || []));
-      setCounts(payload?.counts || []);
+      const pageLeads = Array.isArray(listPayload) ? listPayload : (listPayload?.data || []);
+      const meta = Array.isArray(listPayload) ? (payload?.pagination || payload) : listPayload;
+      const lastPage = Number(meta?.last_page ?? meta?.page_count);
+      const total = Number(meta?.total);
+
+      setLeads(prev => (isFirstPage ? pageLeads : [...prev, ...pageLeads]));
+      setPage(pageToLoad);
+      setHasMore(lastPage ? pageToLoad < lastPage : pageLeads.length === LEADS_PAGE_SIZE);
+      if (isFirstPage) {
+        setTotalLeads(Number.isFinite(total) ? total : null);
+        setCounts(payload?.counts || []);
+      }
     } catch (error: any) {
+      if (requestId !== leadsRequestRef.current) return;
       console.log('Lead listing error:', error?.response || error);
-      setLeads([]);
-      setCounts([]);
+      if (isFirstPage) {
+        setLeads([]);
+        setCounts([]);
+        setTotalLeads(null);
+      }
+      setHasMore(false);
     } finally {
-      setLoading(false);
+      if (requestId === leadsRequestRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [debouncedSearch, endDate, selectedSource, selectedStatus, selectedUser, startDate]);
 
+  const loadMoreLeads = () => {
+    if (loading || loadingMore || !hasMore) return;
+    fetchLeads(page + 1);
+  };
+
   useFocusEffect(useCallback(() => {
-    fetchLeads();
+    fetchLeads(1);
   }, [fetchLeads]));
 
   const userOptions = useMemo(() => [
@@ -227,10 +263,33 @@ const LeadKonnect = ({ navigation }: any) => {
   }, []);
 
   const openCallFeedback = useCallback(async (callLogId: string | number, leadName: string, duration: any) => {
+    promptedCallIdsRef.current.add(String(callLogId));
     setCallFeedback({ callLogId, leadName, duration: Number(duration) || 0, statusId: '', message: '' });
     feedbackSheetRef.current?.show();
     if (!feedbackStatuses.length) await loadFeedbackStatuses();
   }, [feedbackStatuses.length, loadFeedbackStatuses]);
+
+  // Inbound callbacks, and outbound calls whose polling stopped while the app was
+  // in the background, are picked up from the server when the agent returns.
+  const checkPendingFeedback = useCallback(async () => {
+    if (!canUsePlivoCalling || callPollRef.current) return;
+    try {
+      const response = await getPendingCallFeedbackApi();
+      const pending = response?.data?.data;
+      if (!pending?.call_log_id || promptedCallIdsRef.current.has(String(pending.call_log_id))) return;
+      openCallFeedback(pending.call_log_id, pending.customer_name || 'Customer', pending.duration);
+    } catch {
+      // Feedback prompt is best-effort; the call stays visible in Call History.
+    }
+  }, [canUsePlivoCalling, openCallFeedback]);
+
+  useFocusEffect(useCallback(() => {
+    checkPendingFeedback();
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') checkPendingFeedback();
+    });
+    return () => subscription.remove();
+  }, [checkPendingFeedback]));
 
   const submitCallFeedback = async () => {
     const message = String(callFeedback.message || '').trim();
@@ -410,16 +469,28 @@ const LeadKonnect = ({ navigation }: any) => {
 
         <View style={styles.sectionTitleRow}>
           <AppText size={17} color="#202432" family="InterBold">Lead List</AppText>
-          <AppText size={13} color={colors.blue} family="InterSemiBold">{leads.length} leads</AppText>
+          <AppText size={13} color={colors.blue} family="InterSemiBold">{totalLeads !== null && totalLeads > leads.length ? `${leads.length} of ${totalLeads}` : leads.length} leads</AppText>
         </View>
 
-        <ScrollView style={styles.leadListScroll} contentContainerStyle={styles.leadListContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {loading ? <View style={styles.loadingBox}><ActivityIndicator size="large" color={colors.blue} /></View> : leads.length ? leads.map(item => <LeadCard key={item.id} item={item} navigation={navigation} onCallPress={handlePlivoCall} isCalling={callingLeadIds.has(item.id || item?.lead_id)} />) : (
-            <View style={styles.noSearchResults}>
-              <AppText size={15} color="#718096" family="InterMedium">No matching leads</AppText>
-            </View>
-          )}
-        </ScrollView>
+        {loading ? <View style={styles.loadingBox}><ActivityIndicator size="large" color={colors.blue} /></View> : (
+          <FlatList
+            data={leads}
+            keyExtractor={(item, index) => String(item?.id ?? item?.lead_id ?? index)}
+            renderItem={({ item }) => <LeadCard item={item} navigation={navigation} onCallPress={handlePlivoCall} isCalling={callingLeadIds.has(item.id || item?.lead_id)} />}
+            style={styles.leadListScroll}
+            contentContainerStyle={styles.leadListContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            onEndReached={loadMoreLeads}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={loadingMore ? <ActivityIndicator size="small" color={colors.blue} style={styles.loadMoreLoader} /> : null}
+            ListEmptyComponent={(
+              <View style={styles.noSearchResults}>
+                <AppText size={15} color="#718096" family="InterMedium">No matching leads</AppText>
+              </View>
+            )}
+          />
+        )}
       </View>
 
       <Pressable accessibilityRole="button" accessibilityLabel="Create new lead" style={styles.fab} onPress={() => navigation.navigate('CreateLead')}>
@@ -692,6 +763,7 @@ const styles = StyleSheet.create({
   leadListContent: { paddingBottom: 100 },
   noSearchResults: { minHeight: 160, borderRadius: 16, backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' },
   loadingBox: { minHeight: 220, alignItems: 'center', justifyContent: 'center' },
+  loadMoreLoader: { marginVertical: 16 },
   fab: { position: 'absolute', right: 20, bottom: 40, width: 60, height: 60, borderRadius: 30, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center', elevation: 6, shadowColor: colors.blue, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 8 },
   sheetContainer: { borderTopLeftRadius: 24, borderTopRightRadius: 24 },
   sheetContent: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 28 },

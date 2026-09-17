@@ -13,18 +13,23 @@ import CustomToggleRow from '../AddCustomer/CustomToggleRowPage';
 import { colors } from '../../utils/Colors';
 import { fonts } from '../../utils/typography';
 
-type SectionKey = 'basic' | 'address' | 'additional';
+type SectionKey = 'basic' | 'address' | 'other' | 'additional';
+
+const OTHER_FIELDS = ['others_1', 'others_2', 'others_3', 'others_4', 'others_5'] as const;
 
 const CreateLead = ({ navigation }: any) => {
   const [expanded, setExpanded] = useState<Record<SectionKey, boolean>>({
     basic: true,
     address: false,
+    other: false,
     additional: false,
   });
   const [form, setForm] = useState({
     company_name: '', website: '', contact_name: '', phone_number: '', email: '',
     status: '' as string | number, lead_source: '', address: '', note: '', other: '',
     pincode_id: '', state_id: '', district_id: '', city_id: '',
+    designation: '', alternate_number: '', revenue_rs_cr: '', place: '',
+    others_1: '', others_2: '', others_3: '', others_4: '', others_5: '',
   });
   const [pincode, setPincode] = useState('');
   const [additionalPhones, setAdditionalPhones] = useState<string[]>([]);
@@ -137,6 +142,7 @@ const CreateLead = ({ navigation }: any) => {
     if (!form.contact_name.trim()) return 'Please enter contact name';
     if (!/^\d{10}$/.test(form.phone_number)) return 'Please enter a valid 10-digit phone number';
     if (additionalPhones.some(number => !/^\d{10}$/.test(number))) return 'Please complete all additional mobile numbers';
+    if (form.alternate_number && !/^\d{10}$/.test(form.alternate_number)) return 'Please enter a valid 10-digit alternate number';
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) return 'Please enter a valid email';
     if (pincode && pincode.length !== 6) return 'Please enter a valid 6-digit pincode';
     if (showCityDropdown && !form.city_id) return 'Please select a city';
@@ -161,6 +167,12 @@ const CreateLead = ({ navigation }: any) => {
         note: form.note.trim(),
         website: form.website.trim(),
         email: form.email.trim(),
+        designation: form.designation.trim(),
+        alternate_number: form.alternate_number.trim(),
+        revenue_rs_cr: form.revenue_rs_cr.trim(),
+        place: form.place.trim(),
+        other: form.other.trim(),
+        ...Object.fromEntries(OTHER_FIELDS.map(key => [key, form[key].trim()])),
         on_location: useCurrentLocation ? 1 : 0,
         phone_numbers: [form.phone_number, ...additionalPhones].filter(Boolean),
       };
@@ -210,6 +222,7 @@ const CreateLead = ({ navigation }: any) => {
           </View>
           <FormInput icon="firm" placeholder="Firm Name *" value={form.company_name} onChangeText={(v: string) => updateField('company_name', v)} />
           <FormInput icon="user" placeholder="Customer Name *" value={form.contact_name} onChangeText={(v: string) => updateField('contact_name', v)} />
+          <FormInput icon="designation" placeholder="Designation" value={form.designation} onChangeText={(v: string) => updateField('designation', v)} />
           <AppText size={14} color={colors.black} family="InterSemiBold" style={styles.fieldLabel}>Mobile Number *</AppText>
           <View style={styles.phoneRow}>
             <FormInput wrapperStyle={styles.phoneInput} icon="phone" placeholder="Enter 10-digit number" value={form.phone_number} onChangeText={(v: string) => updateField('phone_number', v.replace(/\D/g, ''))} keyboardType="phone-pad" maxLength={10} />
@@ -225,12 +238,15 @@ const CreateLead = ({ navigation }: any) => {
               </Pressable>
             </View>
           ))}
+          <FormInput icon="phone" placeholder="Alternate Number" value={form.alternate_number} onChangeText={(v: string) => updateField('alternate_number', v.replace(/\D/g, '').slice(0, 10))} keyboardType="phone-pad" maxLength={10} />
           <FormInput icon="email" placeholder="Email Id" value={form.email} onChangeText={(v: string) => updateField('email', v)} keyboardType="email-address" autoCapitalize="none" />
           <FormInput icon="website" placeholder="Website" value={form.website} onChangeText={(v: string) => updateField('website', v)} keyboardType="url" autoCapitalize="none" />
+          <FormInput icon="revenue" placeholder="Revenue (Rs Cr)" value={form.revenue_rs_cr} onChangeText={(v: string) => updateField('revenue_rs_cr', v)} keyboardType="decimal-pad" />
         </Accordion>
 
         <Accordion title="Address Information" expanded={expanded.address} onToggle={() => toggleSection('address')}>
           <FormInput icon="location" placeholder="Address" value={form.address} onChangeText={(v: string) => updateField('address', v)} />
+          <FormInput icon="location" placeholder="Place" value={form.place} onChangeText={(v: string) => updateField('place', v)} />
           <View style={styles.inputBox}>
             <FieldIcon value="pin" />
             <TextInput placeholder="Pin *" placeholderTextColor="#718096" value={pincode} maxLength={6} keyboardType="numeric" style={styles.textInput} onChangeText={(value) => {
@@ -259,8 +275,14 @@ const CreateLead = ({ navigation }: any) => {
           <FormInput icon="district" placeholder="District" value={districtName} editable={false} />
         </Accordion>
 
-        <Accordion title="Additional Information" expanded={expanded.additional} onToggle={() => toggleSection('additional')}>
+        <Accordion title="Other Details" expanded={expanded.other} onToggle={() => toggleSection('other')}>
           <FormInput icon="other" placeholder="Other" value={form.other} onChangeText={(v: string) => updateField('other', v)} />
+          {OTHER_FIELDS.map((key, index) => (
+            <FormInput key={key} icon="other" placeholder={`Others ${index + 1}`} value={form[key]} onChangeText={(v: string) => updateField(key, v)} />
+          ))}
+        </Accordion>
+
+        <Accordion title="Additional Information" expanded={expanded.additional} onToggle={() => toggleSection('additional')}>
           <LeadDropdown placeholder={loadingOptions ? 'Loading sources...' : 'Lead Source'} data={sourceOptions} value={form.lead_source} onChange={(v: any) => updateField('lead_source', v)} icon="source" />
           <FormInput placeholder="Note" value={form.note} onChangeText={(v: string) => updateField('note', v)} multiline />
         </Accordion>
@@ -326,6 +348,8 @@ const FieldIcon = ({ value }: { value: string }) => {
     city: <><Path d="M4 21V9h6v12M10 21V4h10v17M7 12v2m0 3v1m7-10v2m3-2v2m-3 4v2m3-2v2" {...common} /></>,
     state: <Path d="M4 5l5-2 6 3 5-2v15l-5 2-6-3-5 2V5zm5-2v15m6-12v15" {...common} />,
     district: <><Path d="M4 7h16M4 12h16M4 17h16M8 4v6m8 0v5m-6 0v5" {...common} /></>,
+    designation: <><Rect x="3" y="7" width="18" height="13" rx="2" {...common} /><Path d="M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2M3 13h18" {...common} /></>,
+    revenue: <Path d="M7 4h10M7 8h10M9 4c6 0 6 8 0 8H7l8 8" {...common} />,
     other: <><Path d="M4 6h12M4 10h9M4 14h6M15 16l4-4 2 2-4 4-3 1 1-3z" {...common} /></>,
     source: <><Circle cx="12" cy="5" r="2" {...common} /><Circle cx="5" cy="16" r="2" {...common} /><Circle cx="19" cy="16" r="2" {...common} /><Path d="M12 7v5M7 15l5-3 5 3" {...common} /></>,
   };

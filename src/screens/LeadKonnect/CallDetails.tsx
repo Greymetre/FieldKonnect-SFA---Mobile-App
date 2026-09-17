@@ -1,9 +1,9 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 import AppText from '../../components/AppText/AppText';
-import { getLeadDetailsApi } from '../../api/query/LeadApi';
+import { generateCallTranscriptApi, getCallTranscriptApi, getLeadDetailsApi } from '../../api/query/LeadApi';
 import { colors } from '../../utils/Colors';
 
 const shown = (value: any, fallback = 'Not available') => String(value || '').trim() || fallback;
@@ -43,6 +43,50 @@ const CallDetails = ({ route }: any) => {
 
   useFocusEffect(useCallback(() => { loadLead(); }, [loadLead]));
 
+  const [transcript, setTranscript] = useState<any>({ status: 'not_requested', conversation: [], transcript: null });
+  const [transcriptBusy, setTranscriptBusy] = useState(false);
+  const transcriptPollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const loadTranscript = useCallback(async () => {
+    if (!call?.id || !call?.recording_play_url) return;
+    try {
+      const response = await getCallTranscriptApi(call.id);
+      setTranscript(response?.data?.data || { status: 'not_requested', conversation: [] });
+    } catch {
+      // Transcript is optional on this screen; the rest of the details still show.
+    }
+  }, [call?.id, call?.recording_play_url]);
+
+  useFocusEffect(useCallback(() => { loadTranscript(); }, [loadTranscript]));
+
+  // While a transcript is being generated, check again every 5 seconds.
+  useEffect(() => {
+    if (transcript.status !== 'processing') return;
+    transcriptPollRef.current = setTimeout(loadTranscript, 5000);
+    return () => {
+      if (transcriptPollRef.current) clearTimeout(transcriptPollRef.current);
+    };
+  }, [transcript, loadTranscript]);
+
+  const startTranscript = async (regenerate = false) => {
+    if (!call?.id || transcriptBusy) return;
+    try {
+      setTranscriptBusy(true);
+      const response = await generateCallTranscriptApi(call.id, regenerate);
+      setTranscript(response?.data?.data || { status: 'processing', conversation: [] });
+      if (response?.data?.success === false) Alert.alert('Transcript', response?.data?.message || 'Transcript could not be generated. Please try again.');
+    } catch (error: any) {
+      Alert.alert('Transcript', error?.response?.data?.message || 'Transcript could not be generated. Please try again.');
+    } finally {
+      setTranscriptBusy(false);
+    }
+  };
+
+  const confirmRegenerate = () => Alert.alert('Regenerate transcript?', 'The current transcript will be replaced.', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Regenerate', onPress: () => startTranscript(true) },
+  ]);
+
   const customerName = shown(lead?.contact_name || lead?.contact?.name || call?.customer_name, 'Unknown customer');
   const companyName = shown(lead?.company_name || lead?.name || call?.company_name, 'Unknown firm');
   const phone = shown(lead?.phone_number || lead?.contact?.phone_number || call?.number);
@@ -73,6 +117,7 @@ const CallDetails = ({ route }: any) => {
           </Section>
 
           <Section title="Call Information">
+            <DetailRow label="Call Direction" value={call?.direction === 'inbound' ? 'Inbound' : 'Outbound'} />
             <DetailRow label="Call Date & Time" value={dateLabel(call?.started_at)} />
             <DetailRow label="Call Status" value={call?.connected ? 'Connected' : 'Not Connected'} valueColor={call?.connected ? '#07865E' : '#C73C52'} />
             <DetailRow label="Call Duration" value={durationLabel(call?.duration)} />
@@ -80,6 +125,38 @@ const CallDetails = ({ route }: any) => {
             <DetailRow label="Recording" value={call?.recording_play_url ? 'Available' : 'Not available'} last />
             {call?.remark ? <View style={styles.noteBox}><AppText size={12} color="#748099" family="InterSemiBold">CALL NOTE</AppText><AppText size={14} color="#344159" family="InterMedium" style={styles.noteText}>{call.remark}</AppText></View> : null}
           </Section>
+
+          {call?.recording_play_url ? (
+            <Section title="Call Transcript">
+              <View style={styles.transcriptBody}>
+                {transcript.status === 'completed' ? (
+                  transcript.conversation?.length ? transcript.conversation.map((line: any, index: number) => {
+                    const alt = Number(line.speaker) % 2 === 0;
+                    return (
+                      <View key={`${index}-${line.speaker}`} style={[styles.transcriptRow, alt && styles.transcriptRowAlt]}>
+                        <View style={[styles.speakerAvatar, alt && styles.speakerAvatarAlt]}><AppText size={11} color={alt ? '#0F8A6A' : colors.blue} family="InterBold">S{line.speaker}</AppText></View>
+                        <View style={[styles.transcriptBubble, alt && styles.transcriptBubbleAlt]}>
+                          <AppText size={10} color={alt ? '#0F8A6A' : colors.blue} family="InterBold" align={alt ? 'right' : 'left'}>
+                            SPEAKER {line.speaker}{line.start !== null && line.start !== undefined ? `  ·  ${transcriptTime(line.start)}` : ''}
+                          </AppText>
+                          <AppText size={13} color="#344159" family="InterMedium" style={styles.transcriptText}>{line.text}</AppText>
+                        </View>
+                      </View>
+                    );
+                  }) : <AppText size={13} color="#748099" family="InterMedium">{transcript.transcript || 'No transcript returned.'}</AppText>
+                ) : transcript.status === 'processing' ? (
+                  <View style={styles.transcriptStatus}>
+                    <ActivityIndicator size="small" color={colors.blue} />
+                    <AppText size={13} color="#748099" family="InterMedium">Generating transcript. It will appear here automatically.</AppText>
+                  </View>
+                ) : (
+                  <AppText size={13} color="#748099" family="InterMedium">
+                    {transcript.status === 'failed' ? 'Transcript could not be generated. Please try again.' : 'Transcript has not been generated yet.'}
+                  </AppText>
+                )}
+              </View>
+            </Section>
+          ) : null}
 
           <View style={styles.actions}>
             <Pressable style={styles.callButton} onPress={callNumber}>
@@ -91,11 +168,29 @@ const CallDetails = ({ route }: any) => {
                 <AppText size={15} color={colors.blue} family="InterBold">▶ Play Recording</AppText>
               </Pressable>
             ) : null}
+            {call?.recording_play_url && transcript.status !== 'processing' ? (
+              <Pressable
+                style={[styles.recordingButton, transcriptBusy && styles.buttonDisabled]}
+                disabled={transcriptBusy}
+                onPress={() => (transcript.status === 'completed' ? confirmRegenerate() : startTranscript())}
+              >
+                {transcriptBusy ? <ActivityIndicator size="small" color={colors.blue} /> : (
+                  <AppText size={15} color={colors.blue} family="InterBold">
+                    {transcript.status === 'completed' ? '↻ Regenerate Transcript' : transcript.status === 'failed' ? '↻ Retry Transcript' : '✦ Generate Transcript'}
+                  </AppText>
+                )}
+              </Pressable>
+            ) : null}
           </View>
         </>
       )}
     </ScrollView>
   );
+};
+
+const transcriptTime = (seconds: any) => {
+  const value = Math.max(0, Math.floor(Number(seconds) || 0));
+  return `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 };
 
 const Section = ({ title, children }: any) => <View style={styles.sectionWrap}><AppText size={12} color="#748099" family="InterBold" style={styles.sectionTitle}>{title.toUpperCase()}</AppText><View style={styles.sectionCard}>{children}</View></View>;
@@ -126,6 +221,11 @@ const styles = StyleSheet.create({
   detailRow: { minHeight: 46, borderBottomWidth: 1, borderBottomColor: '#EBF0F6', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, detailRowLast: { borderBottomWidth: 0 }, detailLabel: { flex: .78 }, detailValue: { flex: 1.22 },
   addressRow: { minHeight: 72, alignItems: 'flex-start', paddingVertical: 10 }, addressScroll: { flex: 1.22, maxHeight: 57 }, addressScrollContent: { flexGrow: 1, justifyContent: 'center' },
   noteBox: { marginVertical: 11, borderRadius: 12, backgroundColor: '#F1F6FD', padding: 12 }, noteText: { marginTop: 5, lineHeight: 19 },
+  transcriptBody: { paddingVertical: 12, gap: 10 }, transcriptStatus: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  transcriptRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 }, transcriptRowAlt: { flexDirection: 'row-reverse' },
+  speakerAvatar: { width: 30, height: 30, borderRadius: 9, borderWidth: 1, borderColor: '#B9D2F4', backgroundColor: '#EAF3FF', alignItems: 'center', justifyContent: 'center' }, speakerAvatarAlt: { borderColor: '#A7E3D2', backgroundColor: '#E7F9F3' },
+  transcriptBubble: { flex: 1, maxWidth: '86%', borderRadius: 12, borderTopLeftRadius: 4, backgroundColor: '#F1F6FD', padding: 10 }, transcriptBubbleAlt: { borderTopLeftRadius: 12, borderTopRightRadius: 4, backgroundColor: '#EEF9F5' },
+  transcriptText: { marginTop: 4, lineHeight: 19 }, buttonDisabled: { opacity: 0.6 },
   actions: { marginTop: 16, gap: 9 }, callButton: { height: 52, borderRadius: 14, backgroundColor: colors.blue, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 9, elevation: 2, shadowColor: colors.blue, shadowOffset: { width: 0, height: 3 }, shadowOpacity: .18, shadowRadius: 6 }, recordingButton: { height: 48, borderRadius: 14, borderWidth: 1, borderColor: colors.blue, backgroundColor: '#EAF3FF', alignItems: 'center', justifyContent: 'center' },
 });
 

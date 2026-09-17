@@ -30,6 +30,7 @@ const CallHistory = ({ navigation }: any) => {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'connected' | 'not_connected'>('all');
+  const [direction, setDirection] = useState<'' | 'outbound' | 'inbound'>('');
   const [logs, setLogs] = useState<any[]>([]);
   const [summary, setSummary] = useState({ attempts: 0, connected: 0, not_connected: 0, duration: 0 });
   const [loading, setLoading] = useState(true);
@@ -42,7 +43,9 @@ const CallHistory = ({ navigation }: any) => {
   const loadHistory = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await getMyCallHistoryApi({ period, search: debouncedSearch });
+      const params: Record<string, any> = { period, search: debouncedSearch };
+      if (direction) params.direction = direction;
+      const response = await getMyCallHistoryApi(params);
       setLogs(response?.data?.data || []);
       setSummary(response?.data?.summary || { attempts: 0, connected: 0, not_connected: 0, duration: 0 });
     } catch (error: any) {
@@ -51,7 +54,7 @@ const CallHistory = ({ navigation }: any) => {
     } finally {
       setLoading(false);
     }
-  }, [debouncedSearch, period]);
+  }, [debouncedSearch, direction, period]);
 
   useFocusEffect(useCallback(() => { loadHistory(); }, [loadHistory]));
 
@@ -94,6 +97,14 @@ const CallHistory = ({ navigation }: any) => {
         </View>
 
         <View style={styles.filterRow}>
+          {[['', 'All Calls'], ['outbound', 'Outbound'], ['inbound', 'Inbound']].map(([value, label]) => (
+            <Pressable key={value || 'all-directions'} style={[styles.filterChip, direction === value && styles.filterChipActive]} onPress={() => setDirection(value as any)}>
+              <AppText size={12} color={direction === value ? colors.blue : '#75819A'} family="InterBold">{label}</AppText>
+            </Pressable>
+          ))}
+        </View>
+
+        <View style={[styles.filterRow, styles.statusFilterRow]}>
           {[['all', 'All'], ['connected', 'Connected'], ['not_connected', 'Not Connected']].map(([value, label]) => (
             <Pressable key={value} style={[styles.filterChip, statusFilter === value && styles.filterChipActive]} onPress={() => setStatusFilter(value as any)}>
               <AppText size={12} color={statusFilter === value ? colors.blue : '#75819A'} family="InterBold">{label}</AppText>
@@ -111,7 +122,12 @@ const CallHistory = ({ navigation }: any) => {
                 <AppText size={11} color={item.connected ? '#07865E' : '#C73C52'} family="InterBold">{item.connected ? 'CONNECTED' : 'NOT CONNECTED'}</AppText>
               </View>
             </View>
-            <AppText size={13} color="#75819A" family="InterMedium" style={styles.meta}>{dateLabel(item.started_at)}  ·  {durationLabel(item.duration)}</AppText>
+            <View style={styles.metaRow}>
+              <View style={[styles.directionBadge, item.direction === 'inbound' && styles.inboundBadge]}>
+                <AppText size={10} color={item.direction === 'inbound' ? '#7C3AED' : colors.blue} family="InterBold">{item.direction === 'inbound' ? '↙ INBOUND' : '↗ OUTBOUND'}</AppText>
+              </View>
+              <AppText size={13} color="#75819A" family="InterMedium">{dateLabel(item.started_at)}  ·  {durationLabel(item.duration)}</AppText>
+            </View>
             <AppText size={13} color="#56627B" family="InterMedium" style={styles.company}>{item.company_name || item.number}</AppText>
             {item.remark ? <AppText size={14} color="#52617C" family="InterMedium" style={styles.remark}>{item.remark}</AppText> : null}
             {item.recording_play_url ? (
@@ -150,11 +166,11 @@ const styles = StyleSheet.create({
   periodRow: { flexDirection: 'row', gap: 8 }, periodButton: { flex: 1, height: 38, borderRadius: 12, borderWidth: 1, borderColor: '#D9E2F1', backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' }, periodButtonActive: { backgroundColor: colors.blue, borderColor: colors.blue },
   summaryGrid: { gap: 8, marginTop: 10 }, summaryRow: { flexDirection: 'row', gap: 8 }, summaryCard: { flex: 1, height: 70, borderRadius: 14, borderWidth: 1, borderColor: '#D9E4F3', backgroundColor: 'white', alignItems: 'center', justifyContent: 'center' }, summaryText: { marginTop: 2, letterSpacing: .5, textAlign: 'center' },
   searchBox: { height: 44, marginTop: 10, borderRadius: 12, borderWidth: 1, borderColor: '#D9E4F3', backgroundColor: 'white', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 13, gap: 9 }, searchInput: { flex: 1, color: '#15213A', fontFamily: fonts.InterMedium, fontSize: 14, paddingVertical: 0 },
-  filterRow: { flexDirection: 'row', gap: 7, marginTop: 9, marginBottom: 10 }, filterChip: { flex: 1, alignItems: 'center', paddingHorizontal: 7, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: '#D9E4F3', backgroundColor: 'white' }, filterChipActive: { borderColor: colors.blue, backgroundColor: '#EAF3FF' },
+  filterRow: { flexDirection: 'row', gap: 7, marginTop: 9, marginBottom: 10 }, statusFilterRow: { marginTop: 0 }, filterChip: { flex: 1, alignItems: 'center', paddingHorizontal: 7, paddingVertical: 7, borderRadius: 16, borderWidth: 1, borderColor: '#D9E4F3', backgroundColor: 'white' }, filterChipActive: { borderColor: colors.blue, backgroundColor: '#EAF3FF' },
   loader: { marginTop: 60 }, callCard: { borderRadius: 16, borderWidth: 1, borderColor: '#D8E4F4', backgroundColor: 'white', padding: 12, marginBottom: 8 },
   callTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, nameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 9 },
   statusBadge: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 14, borderWidth: 1 }, connectedBadge: { backgroundColor: '#E7F9F3', borderColor: '#8CDEC4' }, notConnectedBadge: { backgroundColor: '#FFF0F2', borderColor: '#F5B0BB' },
-  meta: { marginTop: 8 }, company: { marginTop: 5 }, remark: { marginTop: 9, lineHeight: 19 }, player: { height: 46, borderRadius: 13, backgroundColor: '#EDF4FE', marginTop: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 8 }, directionBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8, backgroundColor: '#EAF1FD' }, inboundBadge: { backgroundColor: '#F1EAFE' }, company: { marginTop: 5 }, remark: { marginTop: 9, lineHeight: 19 }, player: { height: 46, borderRadius: 13, backgroundColor: '#EDF4FE', marginTop: 10, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
   playCircle: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center', paddingLeft: 2 }, wave: { flex: 1, height: 24, flexDirection: 'row', alignItems: 'center', gap: 4 }, waveLine: { width: 3, height: 12, borderRadius: 2, backgroundColor: '#74A9E9' },
   noRecording: { height: 40, borderRadius: 12, backgroundColor: '#F4F6F9', alignItems: 'center', justifyContent: 'center', marginTop: 10 },
   viewDetails: { minHeight: 40, marginTop: 9, paddingTop: 8, borderTopWidth: 1, borderTopColor: '#E0E8F4', flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 7 },
