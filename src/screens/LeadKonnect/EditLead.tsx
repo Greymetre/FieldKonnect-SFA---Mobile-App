@@ -70,6 +70,10 @@ const EditLead = ({ route, navigation }: any) => {
       Alert.alert('Check required fields', 'Assign To, firm name, customer name, valid mobile number and lead source are required.');
       return;
     }
+    if (form.alternateNumber && !/^\d{10}$/.test(form.alternateNumber)) {
+      Alert.alert('Invalid alternate number', 'Please enter a valid 10-digit alternate number.');
+      return;
+    }
     try {
       setSubmitting(true);
       await updateLeadApi({ lead_id: lead.id, assign_to: form.assignTo, company_name: form.firm.trim(), contact_name: form.customer.trim(), website: form.website.trim(), url: form.website.trim(), phone_number: form.mobile, email: form.email.trim(), address: form.address.trim(), place: form.place.trim(), designation: form.designation.trim(), alternate_number: form.alternateNumber.trim(), revenue_rs_cr: form.revenue.trim(), other: form.other.trim(), ...Object.fromEntries(OTHER_FIELDS.map(key => [key, form[key].trim()])), pincode_id: form.pincodeId, city_id: form.cityId, state_id: form.stateId, district_id: form.districtId, note: form.note.trim(), status: form.status, lead_source: form.source, on_location: atCustomerPlace ? 1 : 0 });
@@ -117,7 +121,7 @@ const EditLead = ({ route, navigation }: any) => {
 
         <FormSection title="Contact & Communication" subtitle="Ways to connect with the customer">
           <EditField icon="phone" label="Mobile Number" value={form.mobile} onChangeText={(value: string) => update('mobile', value.replace(/[^0-9]/g, '').slice(0, 10))} keyboardType="phone-pad" required />
-          <EditField icon="phone" label="Alternate Number" value={form.alternateNumber} onChangeText={(value: string) => update('alternateNumber', value.replace(/[^0-9]/g, '').slice(0, 15))} keyboardType="phone-pad" />
+          <EditField icon="phone" label="Alternate Number" value={form.alternateNumber} onChangeText={(value: string) => update('alternateNumber', value.replace(/[^0-9]/g, '').slice(0, 10))} keyboardType="phone-pad" maxLength={10} />
           <EditField icon="email" label="Email Address" value={form.email} onChangeText={(value: string) => update('email', value)} keyboardType="email-address" autoCapitalize="none" />
         </FormSection>
 

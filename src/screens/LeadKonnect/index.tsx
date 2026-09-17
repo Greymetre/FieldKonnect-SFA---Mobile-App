@@ -5,11 +5,14 @@ import { Dropdown } from 'react-native-element-dropdown';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { PlusAddIcon } from '../../assets/svgs/SvgsFile';
-import { getCallFeedbackStatusesApi, getClickToCallStatusApi, getLeadsApi, getPendingCallFeedbackApi, getLeadStatusSourceApi, initiateClickToCallApi, submitCallFeedbackApi } from '../../api/query/LeadApi';
+import { getCallFeedbackStatusesApi, getClickToCallStatusApi, getLeadDetailsApi, getLeadsApi, getPendingCallFeedbackApi, getLeadStatusSourceApi, initiateClickToCallApi, submitCallFeedbackApi } from '../../api/query/LeadApi';
 import AppText from '../../components/AppText/AppText';
 import CustomerCalendar from '../../components/CustomCalendar/CalendarPopupView';
+import LeadActivityModal from './LeadActivityModal';
+import IosDateRangePicker from '../../components/DatePicker/IosDateRangePicker';
 import { colors } from '../../utils/Colors';
 import { fonts } from '../../utils/typography';
+import { composeEmail } from '../../utils/composeEmail';
 import { useAppSelector } from '../../components/redux/Store';
 
 const formatYYYYMMDD = (date: Date | null) => {
@@ -23,10 +26,22 @@ const formatDisplayDate = (date: Date | null) => date
 
 const cleanPhoneNumber = (value: any) => String(value || '').replace(/[^0-9]/g, '');
 
+// Address used for the map: the location captured at the lead's place, else the saved address, else the city.
 const getLeadLocation = (item: any) => {
-  const gpsOrLocation = String(item?.location_address || '').trim();
-  if (gpsOrLocation && gpsOrLocation.toLowerCase() !== 'n/a') return gpsOrLocation;
-  return String(item?.address || '').trim();
+  const valid = (value: any) => { const text = String(value || '').trim(); return text && text.toLowerCase() !== 'n/a' ? text : ''; };
+  return valid(item?.location_address) || valid(item?.address) || valid(item?.city);
+};
+
+const openLocation = async (location: string) => {
+  if (!location) return;
+  const query = encodeURIComponent(location);
+  const webUrl = `https://www.google.com/maps/search/?api=1&query=${query}`;
+  const nativeUrl = Platform.OS === 'ios' ? `maps://?q=${query}` : `geo:0,0?q=${query}`;
+  try {
+    await Linking.openURL(nativeUrl);
+  } catch {
+    Linking.openURL(webUrl).catch(() => Alert.alert('Unable to open map', 'No map application is available on this device.'));
+  }
 };
 
 const openDialer = async (phone: any) => {
@@ -45,11 +60,6 @@ const openDialer = async (phone: any) => {
   }
 };
 
-const openMail = (email: any) => {
-  const address = String(email || '').trim();
-  if (address) Linking.openURL(`mailto:${address}`).catch(() => {});
-};
-
 const openWhatsApp = (phone: any) => {
   let number = cleanPhoneNumber(phone);
   if (number.length === 10) number = `91${number}`;
@@ -57,19 +67,6 @@ const openWhatsApp = (phone: any) => {
   Linking.openURL(`whatsapp://send?phone=${number}`).catch(() =>
     Linking.openURL(`https://wa.me/${number}`).catch(() => {}),
   );
-};
-
-const openLocation = async (location: string) => {
-  if (!location) return;
-  const query = encodeURIComponent(location);
-  const nativeUrl = `maps://?q=${query}`;
-  const webUrl = `https://www.google.com/maps/search/?api=1&query=${query}`;
-  try {
-    const supported = await Linking.canOpenURL(nativeUrl);
-    await Linking.openURL(supported ? nativeUrl : webUrl);
-  } catch {
-    Linking.openURL(webUrl).catch(() => {});
-  }
 };
 
 const toPlivoE164 = (phone: string) => {
@@ -101,6 +98,9 @@ const LeadKonnect = ({ navigation }: any) => {
   const [hasMore, setHasMore] = useState(false);
   const [totalLeads, setTotalLeads] = useState<number | null>(null);
   const leadsRequestRef = useRef(0);
+  const [activityLeadId, setActivityLeadId] = useState<any>(null);
+  const [leadActivity, setLeadActivity] = useState<any[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<any>(-1);
   const [selectedUser, setSelectedUser] = useState<any>('');
   const [selectedSource, setSelectedSource] = useState('');
@@ -108,6 +108,7 @@ const LeadKonnect = ({ navigation }: any) => {
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [draftUser, setDraftUser] = useState<any>('');
   const [draftSource, setDraftSource] = useState('');
+  const [draftStatus, setDraftStatus] = useState<any>(-1);
   const [draftStartDate, setDraftStartDate] = useState<Date | null>(null);
   const [draftEndDate, setDraftEndDate] = useState<Date | null>(null);
   const [showCal, setShowCal] = useState(false);
@@ -212,6 +213,23 @@ const LeadKonnect = ({ navigation }: any) => {
     }
   }, [debouncedSearch, endDate, selectedSource, selectedStatus, selectedUser, startDate]);
 
+  // Activity comes from the lead details API, the same source as the Lead Details screen.
+  const openLeadActivity = async (leadId: any) => {
+    if (!leadId) return;
+    setActivityLeadId(leadId);
+    setLeadActivity([]);
+    setActivityLoading(true);
+    try {
+      const response = await getLeadDetailsApi(leadId);
+      setLeadActivity(response?.data?.notes_tasks || []);
+    } catch (error: any) {
+      setActivityLeadId(null);
+      Alert.alert('Unable to load activity', error?.response?.data?.message || 'Please try again.');
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
   const loadMoreLeads = () => {
     if (loading || loadingMore || !hasMore) return;
     fetchLeads(page + 1);
@@ -225,11 +243,18 @@ const LeadKonnect = ({ navigation }: any) => {
     { label: 'All Users', value: '' },
     ...users.map(item => ({ label: item?.name || `User ${item?.id}`, value: item?.id })),
   ], [users]);
+  // Same statuses as the summary cards (the "Total" card uses id -1 for all statuses).
+  const statusOptions = useMemo(() => {
+    const options = counts
+      .filter(item => item?.id !== undefined && item?.id !== null && Number(item.id) !== -1)
+      .map(item => ({ label: String(item.display_name || 'Status').replace(/\b\w/g, char => char.toUpperCase()), value: item.id }));
+    return [{ label: 'All Statuses', value: -1 }, ...options];
+  }, [counts]);
   const sourceOptions = useMemo(() => [
     { label: 'All Sources', value: '' },
     ...sources.map(item => ({ label: item?.value || item?.key, value: item?.key || item?.value })),
   ], [sources]);
-  const activeFilterCount = Number(Boolean(selectedUser)) + Number(Boolean(selectedSource)) + Number(Boolean(startDate && endDate));
+  const activeFilterCount = Number(Boolean(selectedUser)) + Number(selectedStatus !== -1 && selectedStatus !== '-1') + Number(Boolean(selectedSource)) + Number(Boolean(startDate && endDate));
 
   const setCallingState = (leadId: string | number, isCalling: boolean) => {
     setCallingLeadIds(prev => {
@@ -262,9 +287,11 @@ const LeadKonnect = ({ navigation }: any) => {
     }
   }, []);
 
-  const openCallFeedback = useCallback(async (callLogId: string | number, leadName: string, duration: any) => {
+  // The status list is the lead statuses; it starts on the lead's current status.
+  const openCallFeedback = useCallback(async (callLogId: string | number, leadName: string, duration: any, leadStatusId?: any) => {
     promptedCallIdsRef.current.add(String(callLogId));
-    setCallFeedback({ callLogId, leadName, duration: Number(duration) || 0, statusId: '', message: '' });
+    const statusId = leadStatusId === undefined || leadStatusId === null || leadStatusId === '' ? '' : Number(leadStatusId);
+    setCallFeedback({ callLogId, leadName, duration: Number(duration) || 0, statusId, message: '' });
     feedbackSheetRef.current?.show();
     if (!feedbackStatuses.length) await loadFeedbackStatuses();
   }, [feedbackStatuses.length, loadFeedbackStatuses]);
@@ -277,7 +304,7 @@ const LeadKonnect = ({ navigation }: any) => {
       const response = await getPendingCallFeedbackApi();
       const pending = response?.data?.data;
       if (!pending?.call_log_id || promptedCallIdsRef.current.has(String(pending.call_log_id))) return;
-      openCallFeedback(pending.call_log_id, pending.customer_name || 'Customer', pending.duration);
+      openCallFeedback(pending.call_log_id, pending.customer_name || 'Customer', pending.duration, pending.lead_status_id);
     } catch {
       // Feedback prompt is best-effort; the call stays visible in Call History.
     }
@@ -293,7 +320,7 @@ const LeadKonnect = ({ navigation }: any) => {
 
   const submitCallFeedback = async () => {
     const message = String(callFeedback.message || '').trim();
-    if (!callFeedback.statusId || !message || feedbackSubmitting) return;
+    if (callFeedback.statusId === '' || !message || feedbackSubmitting) return;
 
     try {
       setFeedbackSubmitting(true);
@@ -304,7 +331,8 @@ const LeadKonnect = ({ navigation }: any) => {
       });
       feedbackSheetRef.current?.hide();
       setCallFeedback({ callLogId: '', leadName: '', duration: 0, statusId: '', message: '' });
-      Alert.alert('Call record saved', 'The call status and notes have been updated.');
+      Alert.alert('Call record saved', 'The lead status and call notes have been updated.');
+      fetchLeads(1);
     } catch (error: any) {
       Alert.alert('Unable to save call record', error?.response?.data?.message || 'Please try again.');
     } finally {
@@ -312,8 +340,21 @@ const LeadKonnect = ({ navigation }: any) => {
     }
   };
 
-  const handlePlivoCall = async (item: any) => {
-    const phone = toPlivoE164(item?.contact?.phone_number || item?.phone || '');
+  const [numberChoice, setNumberChoice] = useState<any>(null);
+
+  // When the lead also has an alternate number, let the agent pick which one to call.
+  const requestLeadCall = (item: any) => {
+    const main = cleanPhoneNumber(item?.contact?.phone_number || item?.phone);
+    const alternate = cleanPhoneNumber(item?.alternate_number);
+    if (alternate && alternate.slice(-10) !== main.slice(-10)) {
+      setNumberChoice({ item, numbers: [{ label: 'Mobile Number', number: main }, { label: 'Alternate Number', number: alternate }].filter(entry => entry.number) });
+      return;
+    }
+    handlePlivoCall(item);
+  };
+
+  const handlePlivoCall = async (item: any, selectedNumber?: string) => {
+    const phone = toPlivoE164(selectedNumber || item?.contact?.phone_number || item?.phone || '');
     if (!phone) return;
 
     if (!canUsePlivoCalling) {
@@ -363,7 +404,7 @@ const LeadKonnect = ({ navigation }: any) => {
             closeCallWaiting();
             setCallingState(leadId, false);
             if (statusData?.requires_feedback !== false) {
-              setTimeout(() => openCallFeedback(callLogId, item?.contact?.name || item?.name || 'Customer', statusData?.duration), 300);
+              setTimeout(() => openCallFeedback(callLogId, item?.contact?.name || item?.name || 'Customer', statusData?.duration, item?.status?.id), 300);
             }
             return;
           }
@@ -402,6 +443,7 @@ const LeadKonnect = ({ navigation }: any) => {
 
   const openFilters = () => {
     setDraftUser(selectedUser);
+    setDraftStatus(selectedStatus);
     setDraftSource(selectedSource);
     setDraftStartDate(startDate);
     setDraftEndDate(endDate);
@@ -410,10 +452,12 @@ const LeadKonnect = ({ navigation }: any) => {
 
   const clearFilters = () => {
     setDraftUser('');
+    setDraftStatus(-1);
     setDraftSource('');
     setDraftStartDate(null);
     setDraftEndDate(null);
     setSelectedUser('');
+    setSelectedStatus(-1);
     setSelectedSource('');
     setStartDate(null);
     setEndDate(null);
@@ -422,6 +466,7 @@ const LeadKonnect = ({ navigation }: any) => {
 
   const applyFilters = () => {
     setSelectedUser(draftUser);
+    setSelectedStatus(draftStatus);
     setSelectedSource(draftSource);
     setStartDate(draftStartDate);
     setEndDate(draftEndDate);
@@ -476,7 +521,7 @@ const LeadKonnect = ({ navigation }: any) => {
           <FlatList
             data={leads}
             keyExtractor={(item, index) => String(item?.id ?? item?.lead_id ?? index)}
-            renderItem={({ item }) => <LeadCard item={item} navigation={navigation} onCallPress={handlePlivoCall} isCalling={callingLeadIds.has(item.id || item?.lead_id)} />}
+            renderItem={({ item }) => <LeadCard item={item} navigation={navigation} onCallPress={requestLeadCall} onActivityPress={() => openLeadActivity(item?.id || item?.lead_id)} isCalling={callingLeadIds.has(item.id || item?.lead_id)} />}
             style={styles.leadListScroll}
             contentContainerStyle={styles.leadListContent}
             showsVerticalScrollIndicator={false}
@@ -505,15 +550,21 @@ const LeadKonnect = ({ navigation }: any) => {
           </View>
           <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>User</AppText>
           <Dropdown style={styles.dropdown} data={userOptions} labelField="label" valueField="value" value={draftUser} onChange={item => setDraftUser(item.value)} placeholder="Select user" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
+          <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Lead Status</AppText>
+          <Dropdown style={styles.dropdown} data={statusOptions} labelField="label" valueField="value" value={draftStatus} onChange={item => setDraftStatus(item.value)} placeholder="Select status" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
           <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Lead Source</AppText>
           <Dropdown style={styles.dropdown} data={sourceOptions} labelField="label" valueField="value" value={draftSource} onChange={item => setDraftSource(item.value)} placeholder="Select source" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
           <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Date Range</AppText>
-          <Pressable style={styles.dateField} onPress={openDateCalendar}>
-            <LeadListIcon type="calendar" />
-            <AppText size={14} color={draftStartDate && draftEndDate ? '#202432' : '#7A8499'} family="InterMedium">
-              {draftStartDate && draftEndDate ? `${formatDisplayDate(draftStartDate)} - ${formatDisplayDate(draftEndDate)}` : 'Select date range'}
-            </AppText>
-          </Pressable>
+          {Platform.OS === 'ios' ? (
+            <IosDateRangePicker startDate={draftStartDate} endDate={draftEndDate} onChange={(start, end) => { setDraftStartDate(start); setDraftEndDate(end); setRangeType('custom'); }} />
+          ) : (
+            <Pressable style={styles.dateField} onPress={openDateCalendar}>
+              <LeadListIcon type="calendar" />
+              <AppText size={14} color={draftStartDate && draftEndDate ? '#202432' : '#7A8499'} family="InterMedium">
+                {draftStartDate && draftEndDate ? `${formatDisplayDate(draftStartDate)} - ${formatDisplayDate(draftEndDate)}` : 'Select date range'}
+              </AppText>
+            </Pressable>
+          )}
           <View style={styles.sheetActions}>
             <Pressable style={styles.clearButton} onPress={clearFilters}><AppText size={15} color={colors.blue} family="InterBold">Clear</AppText></Pressable>
             <Pressable style={styles.applyButton} onPress={applyFilters}><AppText size={15} color="white" family="InterBold">Apply Filters</AppText></Pressable>
@@ -537,8 +588,7 @@ const LeadKonnect = ({ navigation }: any) => {
           </View>
 
           <View style={styles.feedbackLabelRow}>
-            <AppText size={13} color="#566078" family="InterBold">CALL STATUS <AppText size={13} color="#E5485D" family="InterBold">*</AppText></AppText>
-            <AppText size={12} color="#98A2B3" family="InterMedium">Synced from Web CRM</AppText>
+            <AppText size={13} color="#566078" family="InterBold">LEAD STATUS <AppText size={13} color="#E5485D" family="InterBold">*</AppText></AppText>
           </View>
           <Dropdown
             style={styles.feedbackDropdown}
@@ -547,7 +597,7 @@ const LeadKonnect = ({ navigation }: any) => {
             valueField="value"
             value={callFeedback.statusId}
             onChange={status => setCallFeedback((previous: any) => ({ ...previous, statusId: status.value }))}
-            placeholder={feedbackLoading ? 'Loading statuses...' : 'Select call status'}
+            placeholder={feedbackLoading ? 'Loading statuses...' : 'Select lead status'}
             placeholderStyle={styles.feedbackPlaceholder}
             selectedTextStyle={styles.feedbackSelectedText}
             disable={feedbackLoading}
@@ -574,11 +624,11 @@ const LeadKonnect = ({ navigation }: any) => {
 
           <Pressable
             accessibilityRole="button"
-            disabled={!callFeedback.statusId || !String(callFeedback.message || '').trim() || feedbackSubmitting}
+            disabled={callFeedback.statusId === '' || !String(callFeedback.message || '').trim() || feedbackSubmitting}
             onPress={submitCallFeedback}
             style={({ pressed }) => [
               styles.feedbackSubmit,
-              (!callFeedback.statusId || !String(callFeedback.message || '').trim() || feedbackSubmitting) && styles.feedbackSubmitDisabled,
+              (callFeedback.statusId === '' || !String(callFeedback.message || '').trim() || feedbackSubmitting) && styles.feedbackSubmitDisabled,
               pressed && styles.feedbackSubmitPressed,
             ]}
           >
@@ -588,6 +638,38 @@ const LeadKonnect = ({ navigation }: any) => {
           </Pressable>
         </View>
       </ActionSheet>
+
+      <Modal visible={Boolean(numberChoice)} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setNumberChoice(null)}>
+        <Pressable style={styles.callWaitingBackdrop} onPress={() => setNumberChoice(null)}>
+          <Pressable style={styles.numberChoiceCard} onPress={() => {}}>
+            <View style={styles.numberChoiceHeader}>
+              <View style={{ flex: 1 }}>
+                <AppText size={18} color="#202432" family="InterBold">Select number to call</AppText>
+                <AppText size={13} color="#687086" family="InterMedium" numLines={1} style={{ marginTop: 3 }}>{numberChoice?.item?.contact?.name || numberChoice?.item?.name || 'Customer'}</AppText>
+              </View>
+              <Pressable style={styles.closeButton} onPress={() => setNumberChoice(null)}><AppText size={24} color="#566078">×</AppText></Pressable>
+            </View>
+            {(numberChoice?.numbers || []).map((entry: any) => (
+              <Pressable
+                key={entry.label}
+                style={({ pressed }) => [styles.numberOption, pressed && { opacity: 0.7 }]}
+                onPress={() => {
+                  const item = numberChoice.item;
+                  setNumberChoice(null);
+                  handlePlivoCall(item, entry.number);
+                }}
+              >
+                <View style={styles.numberOptionIcon}><LeadListIcon type="phone" size={19} /></View>
+                <View style={{ flex: 1 }}>
+                  <AppText size={12} color="#7A8499" family="InterSemiBold">{entry.label}</AppText>
+                  <AppText size={16} color="#202432" family="InterBold" style={{ marginTop: 2 }}>{entry.number}</AppText>
+                </View>
+                <AppText size={14} color={colors.blue} family="InterBold">Call</AppText>
+              </Pressable>
+            ))}
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={callWaiting.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={closeCallWaiting}>
         <View style={styles.callWaitingBackdrop}>
@@ -609,6 +691,7 @@ const LeadKonnect = ({ navigation }: any) => {
           </View>
         </View>
       </Modal>
+      <LeadActivityModal visible={Boolean(activityLeadId)} loading={activityLoading} activity={leadActivity} navigation={navigation} onClose={() => setActivityLeadId(null)} />
       <CustomerCalendar showCal={showCal} setShowCal={setCalendarVisibility} range={rangeType} minimumDate={null} initialStartDate={draftStartDate} initialEndDate={draftEndDate} setRange={setRangeType} onApplyClick={(start, end, type) => { setDraftStartDate(start); setDraftEndDate(end); setRangeType(type || 'custom'); }} />
     </View>
   );
@@ -621,7 +704,7 @@ const SummaryCard = ({ count, label, active = false, onPress }: any) => (
   </Pressable>
 );
 
-const LeadCard = ({ item, navigation, onCallPress, isCalling = false }: any) => {
+const LeadCard = ({ item, navigation, onCallPress, onActivityPress, isCalling = false }: any) => {
   const phone = cleanPhoneNumber(item?.contact?.phone_number);
   const email = String(item?.contact?.email || '').trim();
   const location = getLeadLocation(item);
@@ -641,7 +724,7 @@ const LeadCard = ({ item, navigation, onCallPress, isCalling = false }: any) => 
     <View style={styles.divider} />
     <View style={styles.infoRow}>
       <InfoCell icon="phone" text={item?.contact?.phone_number || 'No mobile'} />
-      <InfoCell icon="city" text={item?.city || 'No city'} />
+      <InfoCell icon="location" text={item?.city || 'No city'} onPress={location ? () => openLocation(location) : undefined} />
     </View>
     <View style={styles.divider} />
     <View style={styles.infoRow}>
@@ -657,17 +740,20 @@ const LeadCard = ({ item, navigation, onCallPress, isCalling = false }: any) => 
 
     <View style={styles.actionRow}>
       <ActionButton icon="phone" disabled={!phone || isCalling} loading={isCalling} onPress={() => onCallPress(item)} />
-      <ActionButton icon="email" disabled={!email} onPress={() => openMail(email)} />
+      <ActionButton icon="email" disabled={!email} onPress={() => composeEmail(email)} />
       <ActionButton icon="whatsapp" disabled={!phone} onPress={() => openWhatsApp(phone)} />
-      <ActionButton icon="location" disabled={!location} onPress={() => openLocation(location)} />
+      <ActionButton icon="activity" onPress={onActivityPress} />
       <ActionButton icon="view" onPress={() => navigation.navigate('LeadDetails', { lead: item })} />
     </View>
   </View>
   );
 };
 
-const InfoCell = ({ icon, text, placeholder = false }: any) => (
-  <View style={styles.infoCell}><LeadListIcon type={icon} color={placeholder ? '#A9B0BF' : colors.blue} /><AppText size={14} color={placeholder ? '#A9B0BF' : '#50596D'} family={placeholder ? 'InterRegular' : 'InterMedium'} numLines={1} style={{ flex: 1 }}>{text}</AppText></View>
+const InfoCell = ({ icon, text, placeholder = false, onPress }: any) => (
+  <Pressable style={({ pressed }) => [styles.infoCell, onPress && pressed && { opacity: 0.6 }]} onPress={onPress} disabled={!onPress} hitSlop={6}>
+    <LeadListIcon type={icon} color={placeholder ? '#A9B0BF' : colors.blue} />
+    <AppText size={14} color={placeholder ? '#A9B0BF' : '#50596D'} family={placeholder ? 'InterRegular' : 'InterMedium'} numLines={1} style={{ flex: 1 }}>{text}</AppText>
+  </Pressable>
 );
 
 const ActionButton = ({ icon, onPress, disabled = false, loading = false }: any) => (
@@ -701,6 +787,7 @@ const LeadListIcon = ({ type, size = 21, color = colors.blue }: any) => {
     email: <><Rect x="3" y="5" width="18" height="14" rx="2" {...common} /><Path d="M4 7l8 6 8-6" {...common} /></>,
     whatsapp: <><Path d="M20.5 11.5a8.5 8.5 0 01-12.6 7.4L3 20.5l1.6-4.7a8.5 8.5 0 1115.9-4.3z" {...common} /><Path d="M8.2 7.7c.3-.6.6-.6.9-.6l.6.1c.2 0 .3.2.4.4l.8 1.8c.1.2.1.4-.1.6l-.7.9c-.2.2-.1.4 0 .6.8 1.4 1.9 2.5 3.4 3.2.3.1.5.1.7-.1l.9-1.1c.2-.2.4-.3.6-.2l1.9.9c.3.1.4.3.4.5 0 .4-.2 1.5-.9 2.1-.6.6-1.5.8-2.4.6-1.1-.2-2.5-.7-4.3-2.3-2.3-2-3.6-4.5-3.7-5.6 0-.8.5-1.5.5-1.8z" {...common} /></>,
     location: <><Path d="M12 22s7-6 7-13a7 7 0 10-14 0c0 7 7 13 7 13z" {...common} /><Circle cx="12" cy="9" r="2" {...common} /></>,
+    activity: <Path d="M4 12h4l2-6 4 12 2-6h4" {...common} />,
     view: <><Path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z" {...common} /><Circle cx="12" cy="12" r="2.5" {...common} /></>,
     calendar: <><Rect x="3" y="5" width="18" height="16" rx="2" {...common} /><Path d="M7 3v4m10-4v4M3 10h18" {...common} /></>,
   };
@@ -709,6 +796,10 @@ const LeadListIcon = ({ type, size = 21, color = colors.blue }: any) => {
 
 const styles = StyleSheet.create({
   headerCallButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#EDF3FF', alignItems: 'center', justifyContent: 'center' },
+  numberChoiceCard: { width: '100%', maxWidth: 380, borderRadius: 22, backgroundColor: 'white', padding: 18, gap: 10 },
+  numberChoiceHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
+  numberOption: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: colors.blue + '30', backgroundColor: colors.blue + '08' },
+  numberOptionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.blue + '12', alignItems: 'center', justifyContent: 'center' },
   callWaitingBackdrop: { flex: 1, backgroundColor: 'rgba(13, 25, 48, 0.72)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   callWaitingCard: { width: '100%', maxWidth: 360, borderRadius: 28, backgroundColor: 'white', alignItems: 'center', paddingHorizontal: 28, paddingTop: 34, paddingBottom: 24 },
   callPulseOuter: { width: 92, height: 92, borderRadius: 46, backgroundColor: '#E8F0FF', alignItems: 'center', justifyContent: 'center', marginBottom: 22 },

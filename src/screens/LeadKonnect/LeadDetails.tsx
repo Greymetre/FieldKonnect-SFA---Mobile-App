@@ -7,8 +7,11 @@ import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { addLeadNoteApi, checkInLeadApi, checkOutLeadApi, createLeadOpportunityApi, createLeadTaskApi, getLeadCheckinsApi, getLeadDetailsApi, getLeadOpportunityOptionsApi, getLeadTaskDropdownsApi } from '../../api/query/LeadApi';
 import useLocationHook from '../../api/hooks/uselocationhook';
 import AppText from '../../components/AppText/AppText';
+import IosPickerOverlay from '../../components/DatePicker/IosPickerOverlay';
+import LeadActivityModal from './LeadActivityModal';
 import { colors } from '../../utils/Colors';
 import { fonts } from '../../utils/typography';
+import { composeEmail } from '../../utils/composeEmail';
 
 const mapLeadData = (lead: any) => ({
   id: lead?.id,
@@ -56,27 +59,6 @@ const formatTaskDate = (date: Date) => `${date.getFullYear()}-${String(date.getM
 const displayTaskDate = (date: Date) => date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 const formatTaskTime = (date: Date) => `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 const displayTaskTime = (date: Date) => date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-
-const ACTIVITY_META: Record<string, { label: string; icon: string }> = {
-  log: { label: 'Log', icon: 'activity' },
-  call_log: { label: 'Call Log', icon: 'phone' },
-  task: { label: 'Task', icon: 'task' },
-  note: { label: 'Note', icon: 'note' },
-  opportunity: { label: 'Opportunity', icon: 'opportunity' },
-};
-
-const formatActivityTime = (value: any) => {
-  if (!value) return '';
-  const date = new Date(String(value).replace(' ', 'T'));
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
-};
-
-const normalizeActivity = (item: any, index: number) => {
-  const meta = ACTIVITY_META[item?.type] || { label: 'Activity', icon: 'activity' };
-  const description = item?.message || item?.note || item?.remark || item?.task_name || item?.title || item?.name || item?.description || 'Lead activity updated.';
-  const owner = item?.createdby?.name || item?.assignUser?.name || item?.user?.name || item?.created_by_name || '';
-  return { id: `${item?.type || 'activity'}-${item?.id || index}`, type: meta.label, icon: meta.icon, description, owner, time: formatActivityTime(item?.created_at), tag: item?.priority || item?.status || '', date: item?.created_at_formatted || 'Date unavailable' };
-};
 
 const LeadDetails = ({ route, navigation }: any) => {
   const selectedLead = route?.params?.lead;
@@ -151,13 +133,6 @@ const LeadDetails = ({ route, navigation }: any) => {
   }, [fetchDetails]));
 
   const initial = (data.customer || data.firm || 'L').charAt(0).toUpperCase();
-  const activityGroups = useMemo(() => {
-    const grouped = activity.map(normalizeActivity).reduce((result: Record<string, any[]>, item: any) => {
-      (result[item.date] ||= []).push(item);
-      return result;
-    }, {});
-    return Object.entries(grouped).map(([date, items]) => ({ date, items }));
-  }, [activity]);
 
   const submitNote = async () => {
     const note = noteText.trim();
@@ -283,9 +258,9 @@ const LeadDetails = ({ route, navigation }: any) => {
     }
   };
 
-  const applyTaskPicker = () => {
-    if (taskPickerMode === 'date') setTaskDate(taskPickerValue);
-    if (taskPickerMode === 'time') setTaskTime(taskPickerValue);
+  const applyTaskPicker = (value: Date) => {
+    if (taskPickerMode === 'date') setTaskDate(value);
+    if (taskPickerMode === 'time') setTaskTime(value);
     setTaskPickerMode(null);
   };
 
@@ -412,7 +387,7 @@ const LeadDetails = ({ route, navigation }: any) => {
           { label: 'Designation', value: data.designation },
           { label: 'Mobile Number', value: data.phone, onPress: data.phone ? () => Linking.openURL(`tel:${data.phone}`) : undefined },
           { label: 'Alternate Number', value: data.alternateNumber, onPress: data.alternateNumber ? () => Linking.openURL(`tel:${data.alternateNumber}`) : undefined },
-          { label: 'Email Id', value: data.email, onPress: data.email ? () => Linking.openURL(`mailto:${data.email}`) : undefined },
+          { label: 'Email Id', value: data.email, onPress: data.email ? () => composeEmail(data.email) : undefined },
         ]} />
       </Section>
 
@@ -452,7 +427,7 @@ const LeadDetails = ({ route, navigation }: any) => {
                 </Pressable>
               )}
               {!!fieldValue(contact?.email) && (
-                <Pressable style={styles.contactLink} onPress={() => Linking.openURL(`mailto:${contact.email}`)}>
+                <Pressable style={styles.contactLink} onPress={() => composeEmail(contact.email)}>
                   <DetailIcon type="email" size={16} />
                   <AppText size={14} color={colors.blue} family="InterMedium">{contact.email}</AppText>
                 </Pressable>
@@ -502,30 +477,7 @@ const LeadDetails = ({ route, navigation }: any) => {
         <TimelineCard label="Converted" value={shown(data.converted, 'N/A')} placeholder={!data.converted} />
       </View>
 
-      <Modal visible={showActivity} transparent animationType="slide" statusBarTranslucent onRequestClose={() => setShowActivity(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.activityModal}>
-            <View style={styles.modalHeader}>
-              <View style={styles.modalTitleIcon}><DetailIcon type="activity" color="white" /></View>
-              <View style={{ flex: 1 }}>
-                <AppText size={19} color="#202432" family="InterBold">Lead Activity</AppText>
-                <AppText size={12} color="#858DA0" family="InterRegular">Complete lead history by date</AppText>
-              </View>
-              <Pressable style={styles.modalClose} onPress={() => setShowActivity(false)}><DetailIcon type="close" size={19} /></Pressable>
-            </View>
-            <ScrollView contentContainerStyle={styles.activityContent} showsVerticalScrollIndicator={false}>
-              {activityGroups.length ? activityGroups.map(group => (
-                <View key={group.date} style={styles.activityGroup}>
-                  <View style={styles.dateBadge}><DetailIcon type="calendar" size={17} /><AppText size={13} color={colors.blue} family="InterBold">{group.date}</AppText></View>
-                  <View style={styles.activityTimeline}>
-                    {group.items.map((item, index) => <ActivityLogCard key={item.id} item={item} last={index === group.items.length - 1} />)}
-                  </View>
-                </View>
-              )) : <View style={styles.activityEmpty}><View style={styles.activityEmptyIcon}><DetailIcon type="activity" size={28} /></View><AppText size={16} color="#30384A" family="InterBold">No activity found</AppText><AppText size={13} color="#8991A3" family="InterRegular" align="center">Lead updates, calls, notes and tasks will appear here.</AppText></View>}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
+      <LeadActivityModal visible={showActivity} onClose={() => setShowActivity(false)} activity={activity} navigation={navigation} />
 
       <Modal visible={showNote} transparent animationType="fade" statusBarTranslucent onRequestClose={() => !submittingNote && setShowNote(false)}>
         <KeyboardAvoidingView style={styles.noteModalBackdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -620,17 +572,16 @@ const LeadDetails = ({ route, navigation }: any) => {
                 <Pressable style={[styles.taskSaveButton, savingTask && { opacity: 0.65 }]} onPress={saveTask} disabled={savingTask || taskOptionsLoading}>{savingTask ? <ActivityIndicator color="white" /> : <DetailIcon type="save" color="white" size={18} />}<AppText size={15} color="white" family="InterBold">{savingTask ? 'Saving...' : 'Save Task'}</AppText></Pressable>
               </View>
             </ScrollView>
-            {Platform.OS === 'ios' && taskPickerMode && <View style={styles.pickerBackdrop}>
-              <View style={styles.pickerCard}>
-                <View style={styles.pickerHeader}>
-                  <Pressable onPress={() => setTaskPickerMode(null)}><AppText size={14} color="#687086" family="InterSemiBold">Cancel</AppText></Pressable>
-                  <AppText size={16} color="#202432" family="InterBold">Select {taskPickerMode === 'date' ? 'Due Date' : 'Due Time'}</AppText>
-                  <Pressable onPress={applyTaskPicker}><AppText size={14} color={colors.blue} family="InterBold">Done</AppText></Pressable>
-                </View>
-                <DateTimePicker value={taskPickerValue} mode={taskPickerMode} display="spinner" minimumDate={taskPickerMode === 'date' ? new Date() : undefined} onChange={(_, value) => value && setTaskPickerValue(value)} style={styles.iosPicker} />
-              </View>
-            </View>}
           </View>
+          <IosPickerOverlay
+            visible={Platform.OS === 'ios' && Boolean(taskPickerMode)}
+            title={taskPickerMode === 'time' ? 'Select Due Time' : 'Select Due Date'}
+            mode={taskPickerMode === 'time' ? 'time' : 'date'}
+            value={taskPickerValue}
+            minimumDate={taskPickerMode === 'date' ? new Date() : undefined}
+            onCancel={() => setTaskPickerMode(null)}
+            onDone={applyTaskPicker}
+          />
         </KeyboardAvoidingView>
       </Modal>
 
@@ -663,7 +614,7 @@ const LeadDetails = ({ route, navigation }: any) => {
               <TextInput value={opportunityForm.note} onChangeText={note => { setOpportunityForm(current => ({ ...current, note: note.slice(0, 1000) })); setOpportunityError(''); }} placeholder="Add context, requirements or next steps..." placeholderTextColor="#A2A9B7" multiline textAlignVertical="top" style={styles.opportunityNote} />
               <TaskFieldLabel icon="calendar" label="Estimated Close Date" required />
               <Pressable style={styles.taskScheduleField} onPress={() => setShowOpportunityDatePicker(true)}><AppText size={14} color="#30384A" family="InterSemiBold">{displayTaskDate(opportunityDate)}</AppText><DetailIcon type="calendar" size={18} /></Pressable>
-              {showOpportunityDatePicker && <DateTimePicker value={opportunityDate} mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'} minimumDate={new Date()} onChange={(_, value) => { setShowOpportunityDatePicker(false); if (value) setOpportunityDate(value); }} />}
+              {Platform.OS === 'android' && showOpportunityDatePicker && <DateTimePicker value={opportunityDate} mode="date" minimumDate={new Date()} onChange={(_, value) => { setShowOpportunityDatePicker(false); if (value) setOpportunityDate(value); }} />}
               <TaskFieldLabel icon="status" label="Opportunity Status" required />
               <Dropdown dropdownPosition="top" maxHeight={240} style={styles.taskDropdown} containerStyle={styles.opportunityDropdownMenu} data={opportunityStatuses} labelField="label" valueField="value" value={opportunityForm.status} onChange={item => { setOpportunityForm(current => ({ ...current, status: item.value })); setOpportunityError(''); }} placeholder={opportunityOptionsLoading ? 'Loading statuses...' : 'Select status'} placeholderStyle={styles.taskPlaceholder} selectedTextStyle={styles.taskSelectedText} disable={opportunityOptionsLoading} />
               {opportunityError ? <AppText size={12} color="#C43D36" family="InterMedium" style={styles.taskErrorText}>{opportunityError}</AppText> : null}
@@ -673,6 +624,7 @@ const LeadDetails = ({ route, navigation }: any) => {
               </View>
             </ScrollView>
           </View>
+          <IosPickerOverlay visible={Platform.OS === 'ios' && showOpportunityDatePicker} title="Estimated Close Date" mode="date" value={opportunityDate} minimumDate={new Date()} onCancel={() => setShowOpportunityDatePicker(false)} onDone={value => { setOpportunityDate(value); setShowOpportunityDatePicker(false); }} />
         </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
@@ -727,27 +679,6 @@ const ConfidenceSlider = ({ value, onChange }: { value: number; onChange: (value
   }), [width]);
   return <View style={styles.sliderTouch} onLayout={event => setWidth(event.nativeEvent.layout.width)} {...responder.panHandlers}><View style={styles.sliderTrack}><View style={[styles.sliderFill, { width: `${value}%` }]} /><View style={[styles.sliderThumb, { left: `${value}%` }]} /></View></View>;
 };
-
-const ActivityLogCard = ({ item, last }: any) => (
-  <View style={styles.activityEntryRow}>
-    <View style={styles.timelineRail}>
-      <View style={styles.timelineDot} />
-      {!last && <View style={styles.timelineLine} />}
-    </View>
-    <View style={styles.activityEntry}>
-      <View style={styles.activityEntryIcon}><DetailIcon type={item.icon} size={21} /></View>
-      <View style={{ flex: 1 }}>
-        <View style={styles.activityEntryHeader}>
-          <AppText size={15} color="#202432" family="InterBold">{item.type}</AppText>
-          {item.tag && <View style={styles.activityTag}><AppText size={10} color={colors.blue} family="InterBold" numLines={1}>{item.tag}</AppText></View>}
-          <AppText size={11} color="#9198A8" family="InterMedium" style={{ marginLeft: 'auto' }}>{item.time}</AppText>
-        </View>
-        <AppText size={14} color="#4F586D" family="InterRegular" style={styles.activityDescription}>{item.description}</AppText>
-        {item.owner ? <View style={styles.activityOwner}><DetailIcon type="user" size={14} /><AppText size={12} color={colors.blue} family="InterSemiBold">{item.owner}</AppText></View> : null}
-      </View>
-    </View>
-  </View>
-);
 
 const TimelineCard = ({ label, value, placeholder = false }: any) => (
   <View style={styles.timelineCard}>
@@ -821,27 +752,9 @@ const styles = StyleSheet.create({
   actionIcon: { width: 52, height: 52, borderRadius: 14, backgroundColor: colors.blue + '0D', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: colors.blue + '18' },
   timelineRow: { flexDirection: 'row', gap: 9 },
   timelineCard: { flex: 1, minHeight: 118, alignItems: 'center', justifyContent: 'center', gap: 9, padding: 10, borderRadius: 16, backgroundColor: 'white', borderWidth: 1, borderColor: '#E4E8EF', elevation: 2, shadowColor: '#17203A', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
-  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(20,27,43,0.52)' },
-  activityModal: { height: '88%', overflow: 'hidden', borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: '#F7F8FB' },
   modalHeader: { minHeight: 78, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 18, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#E8EBF1' },
   modalTitleIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
   modalClose: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.blue + '0D', borderWidth: 1, borderColor: colors.blue + '25', alignItems: 'center', justifyContent: 'center' },
-  activityContent: { padding: 16, paddingBottom: 32 },
-  activityGroup: { marginBottom: 18 },
-  dateBadge: { alignSelf: 'flex-start', height: 36, flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 11, paddingHorizontal: 12, borderRadius: 11, backgroundColor: colors.blue + '0D', borderWidth: 1, borderColor: colors.blue + '22' },
-  activityTimeline: { gap: 0 },
-  activityEntryRow: { flexDirection: 'row' },
-  timelineRail: { width: 20, alignItems: 'center' },
-  timelineDot: { width: 10, height: 10, marginTop: 22, borderRadius: 5, backgroundColor: colors.blue, borderWidth: 2, borderColor: '#DCE5FF' },
-  timelineLine: { width: 2, flex: 1, minHeight: 72, backgroundColor: colors.blue + '22' },
-  activityEntry: { flex: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 11, marginBottom: 12, padding: 14, borderRadius: 15, backgroundColor: 'white', borderWidth: 1, borderColor: '#E6E9F0', elevation: 2, shadowColor: '#17203A', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 6 },
-  activityEntryIcon: { width: 42, height: 42, borderRadius: 13, backgroundColor: colors.blue + '0D', alignItems: 'center', justifyContent: 'center' },
-  activityEntryHeader: { minHeight: 22, flexDirection: 'row', alignItems: 'center', gap: 7 },
-  activityTag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 9, backgroundColor: colors.blue + '10', borderWidth: 1, borderColor: colors.blue + '25' },
-  activityDescription: { marginTop: 5, lineHeight: 19 },
-  activityOwner: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8 },
-  activityEmpty: { minHeight: 300, alignItems: 'center', justifyContent: 'center', gap: 9, paddingHorizontal: 35 },
-  activityEmptyIcon: { width: 62, height: 62, marginBottom: 3, borderRadius: 20, backgroundColor: colors.blue + '0D', alignItems: 'center', justifyContent: 'center' },
   noteModalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: 'rgba(20,27,43,0.56)' },
   noteModal: { width: '100%', maxWidth: 520, overflow: 'hidden', borderRadius: 22, backgroundColor: '#F8F9FC', elevation: 12, shadowColor: '#111827', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 18 },
   noteModalBody: { padding: 18 },
@@ -881,10 +794,6 @@ const styles = StyleSheet.create({
   taskActions: { flexDirection: 'row', gap: 11, marginTop: 18 },
   taskCancelButton: { flex: 1, height: 52, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: 'white', borderWidth: 1, borderColor: colors.blue + '55' },
   taskSaveButton: { flex: 1.35, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 13, backgroundColor: colors.blue, elevation: 3, shadowColor: colors.blue, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 7 },
-  pickerBackdrop: { ...StyleSheet.absoluteFillObject, zIndex: 20, alignItems: 'center', justifyContent: 'center', padding: 18, backgroundColor: 'rgba(20,27,43,0.48)' },
-  pickerCard: { width: '100%', maxWidth: 430, overflow: 'hidden', borderRadius: 18, backgroundColor: 'white', elevation: 10, shadowColor: '#111827', shadowOffset: { width: 0, height: 7 }, shadowOpacity: 0.22, shadowRadius: 15 },
-  pickerHeader: { height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 17, borderBottomWidth: 1, borderBottomColor: '#E8EBF1' },
-  iosPicker: { height: 210 },
 });
 
 export default LeadDetails;

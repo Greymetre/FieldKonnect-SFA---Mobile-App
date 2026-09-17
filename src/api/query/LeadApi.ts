@@ -89,6 +89,9 @@ export const submitCallFeedbackApi = (payload: {
 export const getPendingCallFeedbackApi = () =>
   axiosClient.get('api/pending-call-feedback');
 
+export const getCallLogApi = (callLogId: string | number) =>
+  axiosClient.get(`api/call-log/${callLogId}`);
+
 export const getCallTranscriptApi = (callLogId: string | number) =>
   axiosClient.get(`api/call-transcript/${callLogId}`);
 

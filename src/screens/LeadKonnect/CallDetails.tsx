@@ -3,7 +3,7 @@ import { ActivityIndicator, Alert, Linking, Pressable, ScrollView, StyleSheet, V
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Path } from 'react-native-svg';
 import AppText from '../../components/AppText/AppText';
-import { generateCallTranscriptApi, getCallTranscriptApi, getLeadDetailsApi } from '../../api/query/LeadApi';
+import { generateCallTranscriptApi, getCallLogApi, getCallTranscriptApi, getLeadDetailsApi } from '../../api/query/LeadApi';
 import { colors } from '../../utils/Colors';
 
 const shown = (value: any, fallback = 'Not available') => String(value || '').trim() || fallback;
@@ -20,14 +20,27 @@ const dateLabel = (value?: string) => value
   ? new Date(value).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
   : 'Not available';
 
-const CallDetails = ({ route }: any) => {
-  const call = route?.params?.call || {};
+const CallDetails = ({ route, navigation }: any) => {
+  // Opened with the call from Call History, or with only its ID from Lead Activity.
+  const callLogId = route?.params?.callLogId;
+  const [fetchedCall, setFetchedCall] = useState<any>(null);
+  const call = route?.params?.call || fetchedCall || {};
   const [lead, setLead] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    if (route?.params?.call || !callLogId) return;
+    getCallLogApi(callLogId)
+      .then(response => setFetchedCall(response?.data?.data || null))
+      .catch((error: any) => {
+        setLoading(false);
+        Alert.alert('Unable to load call', error?.response?.data?.message || 'Call details could not be loaded.');
+      });
+  }, [callLogId, route?.params?.call]);
+
   const loadLead = useCallback(async () => {
     if (!call?.lead_id) {
-      setLoading(false);
+      if (!callLogId || fetchedCall || route?.params?.call) setLoading(false);
       return;
     }
     try {
@@ -39,7 +52,7 @@ const CallDetails = ({ route }: any) => {
     } finally {
       setLoading(false);
     }
-  }, [call?.lead_id]);
+  }, [call?.lead_id, callLogId, fetchedCall, route?.params?.call]);
 
   useFocusEffect(useCallback(() => { loadLead(); }, [loadLead]));
 
@@ -102,7 +115,17 @@ const CallDetails = ({ route }: any) => {
         <View style={styles.avatar}><AppText size={23} color="white" family="InterBold">{initial || 'C'}</AppText></View>
         <AppText size={21} color="#17233A" family="InterBold" style={styles.customerName}>{customerName}</AppText>
         <AppText size={14} color="#69758C" family="InterMedium" style={styles.companyName}>{companyName}</AppText>
-        <View style={styles.leadBadge}><AppText size={11} color={colors.blue} family="InterBold">{leadStatus.toUpperCase()}</AppText></View>
+        {call?.lead_id ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open lead details"
+            style={({ pressed }) => [styles.leadBadge, styles.leadBadgeLink, pressed && { opacity: 0.7 }]}
+            onPress={() => navigation.navigate('LeadDetails', { lead: { ...(lead || {}), id: call.lead_id } })}
+          >
+            <AppText size={11} color={colors.blue} family="InterBold">{leadStatus.toUpperCase()}</AppText>
+            <AppText size={13} color={colors.blue} family="InterBold">›</AppText>
+          </Pressable>
+        ) : <View style={styles.leadBadge}><AppText size={11} color={colors.blue} family="InterBold">{leadStatus.toUpperCase()}</AppText></View>}
       </View>
 
       {loading ? <ActivityIndicator size="large" color={colors.blue} style={styles.loader} /> : (
@@ -216,7 +239,7 @@ const PhoneIcon = ({ color }: { color: string }) => <Svg width={19} height={19} 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#F3F6FB' }, content: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 36 },
   profileCard: { alignItems: 'center', paddingVertical: 14 }, avatar: { width: 62, height: 62, borderRadius: 31, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center', elevation: 3, shadowColor: colors.blue, shadowOffset: { width: 0, height: 3 }, shadowOpacity: .2, shadowRadius: 7 },
-  customerName: { marginTop: 10 }, companyName: { marginTop: 3 }, leadBadge: { marginTop: 8, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: '#E9F2FF', borderWidth: 1, borderColor: '#B9D2F4' }, loader: { marginTop: 45 },
+  customerName: { marginTop: 10 }, companyName: { marginTop: 3 }, leadBadgeLink: { flexDirection: 'row', alignItems: 'center', gap: 5 }, leadBadge: { marginTop: 8, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: '#E9F2FF', borderWidth: 1, borderColor: '#B9D2F4' }, loader: { marginTop: 45 },
   sectionWrap: { marginTop: 11 }, sectionTitle: { marginBottom: 7, marginLeft: 2, letterSpacing: .6 }, sectionCard: { borderRadius: 16, borderWidth: 1, borderColor: '#D8E4F4', backgroundColor: 'white', paddingHorizontal: 14, shadowColor: '#24446F', shadowOffset: { width: 0, height: 3 }, shadowOpacity: .05, shadowRadius: 8, elevation: 1 },
   detailRow: { minHeight: 46, borderBottomWidth: 1, borderBottomColor: '#EBF0F6', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }, detailRowLast: { borderBottomWidth: 0 }, detailLabel: { flex: .78 }, detailValue: { flex: 1.22 },
   addressRow: { minHeight: 72, alignItems: 'flex-start', paddingVertical: 10 }, addressScroll: { flex: 1.22, maxHeight: 57 }, addressScrollContent: { flexGrow: 1, justifyContent: 'center' },
