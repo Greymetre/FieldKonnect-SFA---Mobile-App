@@ -44,6 +44,11 @@ const openLocation = async (location: string) => {
   }
 };
 
+const openWebsite = (website: string) => {
+  const url = /^https?:\/\//i.test(website) ? website : `https://${website}`;
+  Linking.openURL(url).catch(() => Alert.alert('Unable to open website', 'Please check the website address.'));
+};
+
 const openDialer = async (phone: any) => {
   const number = cleanPhoneNumber(phone);
   if (!number) return;
@@ -92,6 +97,7 @@ const LeadKonnect = ({ navigation }: any) => {
   const [counts, setCounts] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
+  const [designations, setDesignations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
@@ -104,10 +110,12 @@ const LeadKonnect = ({ navigation }: any) => {
   const [selectedStatus, setSelectedStatus] = useState<any>(-1);
   const [selectedUser, setSelectedUser] = useState<any>('');
   const [selectedSource, setSelectedSource] = useState('');
+  const [selectedDesignation, setSelectedDesignation] = useState('');
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [draftUser, setDraftUser] = useState<any>('');
   const [draftSource, setDraftSource] = useState('');
+  const [draftDesignation, setDraftDesignation] = useState('');
   const [draftStatus, setDraftStatus] = useState<any>(-1);
   const [draftStartDate, setDraftStartDate] = useState<Date | null>(null);
   const [draftEndDate, setDraftEndDate] = useState<Date | null>(null);
@@ -162,6 +170,7 @@ const LeadKonnect = ({ navigation }: any) => {
       const data = response?.data?.data || {};
       setUsers(data?.users || []);
       setSources(data?.source || []);
+      setDesignations(data?.designations || []);
     }).catch(error => console.log('Lead filter options error:', error?.response || error));
   }, []);
 
@@ -175,6 +184,7 @@ const LeadKonnect = ({ navigation }: any) => {
       if (debouncedSearch) params.search = debouncedSearch;
       if (selectedUser) params.user_id = selectedUser;
       if (selectedSource) params.lead_source = selectedSource;
+      if (selectedDesignation) params.designation = selectedDesignation;
       if (selectedStatus !== -1) params.status = selectedStatus;
       if (startDate && endDate) {
         params.start_date = formatYYYYMMDD(startDate);
@@ -211,7 +221,7 @@ const LeadKonnect = ({ navigation }: any) => {
         setLoadingMore(false);
       }
     }
-  }, [debouncedSearch, endDate, selectedSource, selectedStatus, selectedUser, startDate]);
+  }, [debouncedSearch, endDate, selectedDesignation, selectedSource, selectedStatus, selectedUser, startDate]);
 
   // Activity comes from the lead details API, the same source as the Lead Details screen.
   const openLeadActivity = async (leadId: any) => {
@@ -254,7 +264,11 @@ const LeadKonnect = ({ navigation }: any) => {
     { label: 'All Sources', value: '' },
     ...sources.map(item => ({ label: item?.value || item?.key, value: item?.key || item?.value })),
   ], [sources]);
-  const activeFilterCount = Number(Boolean(selectedUser)) + Number(selectedStatus !== -1 && selectedStatus !== '-1') + Number(Boolean(selectedSource)) + Number(Boolean(startDate && endDate));
+  const designationOptions = useMemo(() => [
+    { label: 'All Designations', value: '' },
+    ...designations.map(item => ({ label: item, value: item })),
+  ], [designations]);
+  const activeFilterCount = Number(Boolean(selectedUser)) + Number(selectedStatus !== -1 && selectedStatus !== '-1') + Number(Boolean(selectedSource)) + Number(Boolean(selectedDesignation)) + Number(Boolean(startDate && endDate));
 
   const setCallingState = (leadId: string | number, isCalling: boolean) => {
     setCallingLeadIds(prev => {
@@ -445,6 +459,7 @@ const LeadKonnect = ({ navigation }: any) => {
     setDraftUser(selectedUser);
     setDraftStatus(selectedStatus);
     setDraftSource(selectedSource);
+    setDraftDesignation(selectedDesignation);
     setDraftStartDate(startDate);
     setDraftEndDate(endDate);
     filterSheetRef.current?.show();
@@ -454,11 +469,13 @@ const LeadKonnect = ({ navigation }: any) => {
     setDraftUser('');
     setDraftStatus(-1);
     setDraftSource('');
+    setDraftDesignation('');
     setDraftStartDate(null);
     setDraftEndDate(null);
     setSelectedUser('');
     setSelectedStatus(-1);
     setSelectedSource('');
+    setSelectedDesignation('');
     setStartDate(null);
     setEndDate(null);
     filterSheetRef.current?.hide();
@@ -468,6 +485,7 @@ const LeadKonnect = ({ navigation }: any) => {
     setSelectedUser(draftUser);
     setSelectedStatus(draftStatus);
     setSelectedSource(draftSource);
+    setSelectedDesignation(draftDesignation);
     setStartDate(draftStartDate);
     setEndDate(draftEndDate);
     filterSheetRef.current?.hide();
@@ -554,6 +572,8 @@ const LeadKonnect = ({ navigation }: any) => {
           <Dropdown style={styles.dropdown} data={statusOptions} labelField="label" valueField="value" value={draftStatus} onChange={item => setDraftStatus(item.value)} placeholder="Select status" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
           <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Lead Source</AppText>
           <Dropdown style={styles.dropdown} data={sourceOptions} labelField="label" valueField="value" value={draftSource} onChange={item => setDraftSource(item.value)} placeholder="Select source" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
+          <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Designation</AppText>
+          <Dropdown style={styles.dropdown} data={designationOptions} labelField="label" valueField="value" value={draftDesignation} onChange={item => setDraftDesignation(item.value)} placeholder="Select designation" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} search searchPlaceholder="Search designation" inputSearchStyle={styles.dropdownSearch} />
           <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Date Range</AppText>
           {Platform.OS === 'ios' ? (
             <IosDateRangePicker startDate={draftStartDate} endDate={draftEndDate} onChange={(start, end) => { setDraftStartDate(start); setDraftEndDate(end); setRangeType('custom'); }} />
@@ -708,6 +728,8 @@ const LeadCard = ({ item, navigation, onCallPress, onActivityPress, isCalling = 
   const phone = cleanPhoneNumber(item?.contact?.phone_number);
   const email = String(item?.contact?.email || '').trim();
   const location = getLeadLocation(item);
+  const designation = String(item?.contact?.designation || '').trim();
+  const website = String(item?.website || '').trim();
 
   return (
   <View style={styles.leadCard}>
@@ -732,9 +754,9 @@ const LeadCard = ({ item, navigation, onCallPress, onActivityPress, isCalling = 
       <InfoCell icon="opportunity" text={item?.opportunity_status || 'Opportunity'} placeholder={!item?.opportunity_status} />
     </View>
     <View style={styles.divider} />
-    <View style={styles.noteRow}>
-      <LeadListIcon type="note" />
-      <AppText size={14} color="#50596D" family="InterRegular" style={{ flex: 1 }}>{item?.note || 'No note added'}</AppText>
+    <View style={styles.infoRow}>
+      <InfoCell icon="designation" text={designation || 'No designation'} placeholder={!designation} />
+      <InfoCell icon="website" text={website || 'No website'} placeholder={!website} onPress={website ? () => openWebsite(website) : undefined} />
     </View>
     <View style={styles.divider} />
 
@@ -789,6 +811,8 @@ const LeadListIcon = ({ type, size = 21, color = colors.blue }: any) => {
     location: <><Path d="M12 22s7-6 7-13a7 7 0 10-14 0c0 7 7 13 7 13z" {...common} /><Circle cx="12" cy="9" r="2" {...common} /></>,
     activity: <Path d="M4 12h4l2-6 4 12 2-6h4" {...common} />,
     view: <><Path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z" {...common} /><Circle cx="12" cy="12" r="2.5" {...common} /></>,
+    designation: <><Rect x="3" y="7" width="18" height="13" rx="2" {...common} /><Path d="M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M3 13h18" {...common} /></>,
+    website: <><Circle cx="12" cy="12" r="9" {...common} /><Path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9s1-6.5 3.5-9z" {...common} /></>,
     calendar: <><Rect x="3" y="5" width="18" height="16" rx="2" {...common} /><Path d="M7 3v4m10-4v4M3 10h18" {...common} /></>,
   };
   return <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">{icons[type]}</Svg>;
@@ -845,7 +869,6 @@ const styles = StyleSheet.create({
   divider: { height: 1, backgroundColor: '#E4E7ED', marginVertical: 12 },
   infoRow: { flexDirection: 'row', gap: 12 },
   infoCell: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 9 },
-  noteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   actionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   actionButton: { width: 42, height: 42, borderRadius: 21, borderWidth: 1, alignItems: 'center', justifyContent: 'center', elevation: 1, shadowColor: '#17203A', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3 },
   actionButtonDisabled: { opacity: 0.45, backgroundColor: '#F2F4F7', borderColor: '#E1E5EC' },
@@ -864,6 +887,7 @@ const styles = StyleSheet.create({
   dropdown: { height: 52, borderWidth: 1, borderColor: '#D8DEE9', borderRadius: 12, paddingHorizontal: 14, backgroundColor: '#F8F9FC' },
   placeholder: { color: '#7A8499', fontSize: 14, fontFamily: fonts.InterRegular },
   selectedText: { color: '#202432', fontSize: 14, fontFamily: fonts.InterMedium },
+  dropdownSearch: { height: 44, borderRadius: 10, color: '#202432', fontSize: 14, fontFamily: fonts.InterRegular },
   dateField: { minHeight: 52, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#D8DEE9', borderRadius: 12, paddingHorizontal: 14, backgroundColor: '#F8F9FC' },
   sheetActions: { flexDirection: 'row', gap: 12, marginTop: 24 },
   clearButton: { flex: 1, height: 50, borderRadius: 12, borderWidth: 1, borderColor: colors.blue, alignItems: 'center', justifyContent: 'center' },

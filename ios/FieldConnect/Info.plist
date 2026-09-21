@@ -30,6 +30,14 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>message</string>
+		<string>googlegmail</string>
+		<string>ms-outlook</string>
+		<string>ymail</string>
+		<string>readdle-spark</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
@@ -45,14 +53,6 @@
 	<string>Location tracking starts after punch-in and stops after punch-out. It is used for attendance and field activity tracking.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Location tracking starts after punch-in and stops after punch-out. It is used for attendance and field activity tracking.</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>message</string>
-		<string>googlegmail</string>
-		<string>ms-outlook</string>
-		<string>ymail</string>
-		<string>readdle-spark</string>
-	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>FieldKonnect uses your location for attendance, visit locations, and field activity tracking while you are punched in.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
