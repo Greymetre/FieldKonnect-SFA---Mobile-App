@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, FlatList, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, AppState, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import ActionSheet, { ActionSheetRef } from 'react-native-actions-sheet';
 import { Dropdown } from 'react-native-element-dropdown';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { PlusAddIcon } from '../../assets/svgs/SvgsFile';
-import { getCallFeedbackStatusesApi, getClickToCallStatusApi, getLeadDetailsApi, getLeadsApi, getPendingCallFeedbackApi, getLeadStatusSourceApi, initiateClickToCallApi, submitCallFeedbackApi } from '../../api/query/LeadApi';
+import { getCallFeedbackStatusesApi, getClickToCallStatusApi, getLeadDetailsApi, getLeadsApi, getPendingCallFeedbackApi, getLeadStatusSourceApi, initiateClickToCallApi, submitCallFeedbackApi, updateLeadStatusApi } from '../../api/query/LeadApi';
 import AppText from '../../components/AppText/AppText';
 import CustomerCalendar from '../../components/CustomCalendar/CalendarPopupView';
 import LeadActivityModal from './LeadActivityModal';
@@ -98,6 +98,9 @@ const LeadKonnect = ({ navigation }: any) => {
   const [users, setUsers] = useState<any[]>([]);
   const [sources, setSources] = useState<any[]>([]);
   const [designations, setDesignations] = useState<string[]>([]);
+  const [leadStatuses, setLeadStatuses] = useState<any[]>([]);
+  const [statusChange, setStatusChange] = useState<any>(null);
+  const [statusChangeSubmitting, setStatusChangeSubmitting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [page, setPage] = useState(1);
@@ -171,6 +174,7 @@ const LeadKonnect = ({ navigation }: any) => {
       setUsers(data?.users || []);
       setSources(data?.source || []);
       setDesignations(data?.designations || []);
+      setLeadStatuses(data?.status || []);
     }).catch(error => console.log('Lead filter options error:', error?.response || error));
   }, []);
 
@@ -268,6 +272,10 @@ const LeadKonnect = ({ navigation }: any) => {
     { label: 'All Designations', value: '' },
     ...designations.map(item => ({ label: item, value: item })),
   ], [designations]);
+  const leadStatusOptions = useMemo(() => leadStatuses.map(item => ({
+    label: String(item?.display_name || 'Status').replace(/\b\w/g, char => char.toUpperCase()),
+    value: item?.id,
+  })), [leadStatuses]);
   const activeFilterCount = Number(Boolean(selectedUser)) + Number(selectedStatus !== -1 && selectedStatus !== '-1') + Number(Boolean(selectedSource)) + Number(Boolean(selectedDesignation)) + Number(Boolean(startDate && endDate));
 
   const setCallingState = (leadId: string | number, isCalling: boolean) => {
@@ -351,6 +359,60 @@ const LeadKonnect = ({ navigation }: any) => {
       Alert.alert('Unable to save call record', error?.response?.data?.message || 'Please try again.');
     } finally {
       setFeedbackSubmitting(false);
+    }
+  };
+
+  const openStatusChange = (item: any) => {
+    const statusId = item?.status?.id;
+    setStatusChange({ lead: item, statusId: statusId ? Number(statusId) : '', note: '' });
+  };
+
+  const closeStatusChange = () => {
+    if (!statusChangeSubmitting) setStatusChange(null);
+  };
+
+  // A changed lead moves to the end of the list, matching the server order.
+  const submitStatusChange = async () => {
+    const lead = statusChange?.lead;
+    const leadId = lead?.id || lead?.lead_id;
+    const newStatusId = statusChange?.statusId;
+    if (!leadId || newStatusId === '' || statusChangeSubmitting) return;
+    const note = String(statusChange.note || '').trim();
+    const oldStatusId = Number(lead?.status?.id ?? 0);
+    const statusChanged = Number(newStatusId) !== oldStatusId;
+
+    try {
+      setStatusChangeSubmitting(true);
+      const response = await updateLeadStatusApi(leadId, newStatusId, note || undefined);
+      if (response?.data?.status === 'error') {
+        Alert.alert('Unable to update status', response?.data?.message || 'Please try again.');
+        return;
+      }
+      const newStatus = response?.data?.data?.status
+        || { id: newStatusId, display_name: leadStatusOptions.find(option => option.value === newStatusId)?.label || 'Status' };
+
+      if (statusChanged) {
+        const updatedLead = { ...lead, status: newStatus, note: note || lead?.note };
+        const keepInList = selectedStatus === -1 || Number(selectedStatus) === Number(newStatus.id);
+        setLeads(prev => {
+          const rest = prev.filter(entry => (entry?.id || entry?.lead_id) !== leadId);
+          // Leads still to be paged in come before it, so it shows up once the last page loads.
+          return keepInList && !hasMore ? [...rest, updatedLead] : rest;
+        });
+        if (!keepInList) setTotalLeads(prev => (prev === null ? prev : Math.max(0, prev - 1)));
+        setCounts(prev => prev.map(entry => {
+          if (Number(entry?.id) === oldStatusId) return { ...entry, count: Math.max(0, Number(entry.count || 0) - 1) };
+          if (Number(entry?.id) === Number(newStatus.id)) return { ...entry, count: Number(entry.count || 0) + 1 };
+          return entry;
+        }));
+      } else if (note) {
+        setLeads(prev => prev.map(entry => ((entry?.id || entry?.lead_id) === leadId ? { ...entry, note } : entry)));
+      }
+      setStatusChange(null);
+    } catch (error: any) {
+      Alert.alert('Unable to update status', error?.response?.data?.message || 'Please try again.');
+    } finally {
+      setStatusChangeSubmitting(false);
     }
   };
 
@@ -539,7 +601,7 @@ const LeadKonnect = ({ navigation }: any) => {
           <FlatList
             data={leads}
             keyExtractor={(item, index) => String(item?.id ?? item?.lead_id ?? index)}
-            renderItem={({ item }) => <LeadCard item={item} navigation={navigation} onCallPress={requestLeadCall} onActivityPress={() => openLeadActivity(item?.id || item?.lead_id)} isCalling={callingLeadIds.has(item.id || item?.lead_id)} />}
+            renderItem={({ item }) => <LeadCard item={item} navigation={navigation} onCallPress={requestLeadCall} onActivityPress={() => openLeadActivity(item?.id || item?.lead_id)} onStatusPress={() => openStatusChange(item)} isCalling={callingLeadIds.has(item.id || item?.lead_id)} />}
             style={styles.leadListScroll}
             contentContainerStyle={styles.leadListContent}
             showsVerticalScrollIndicator={false}
@@ -659,6 +721,82 @@ const LeadKonnect = ({ navigation }: any) => {
         </View>
       </ActionSheet>
 
+      <Modal visible={Boolean(statusChange)} transparent animationType="fade" statusBarTranslucent onRequestClose={closeStatusChange}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <Pressable style={styles.callWaitingBackdrop} onPress={closeStatusChange}>
+            <Pressable style={styles.numberChoiceCard} onPress={() => {}}>
+              <View style={styles.numberChoiceHeader}>
+                <View style={{ flex: 1 }}>
+                  <AppText size={18} color="#202432" family="InterBold">Change Lead Status</AppText>
+                  <AppText size={13} color="#687086" family="InterMedium" numLines={1} style={{ marginTop: 3 }}>{statusChange?.lead?.name || statusChange?.lead?.contact?.name || 'Lead'}</AppText>
+                </View>
+                <Pressable style={styles.closeButton} onPress={closeStatusChange}><AppText size={24} color="#566078">×</AppText></Pressable>
+              </View>
+
+              <AppText size={13} color="#566078" family="InterBold">LEAD STATUS <AppText size={13} color="#E5485D" family="InterBold">*</AppText></AppText>
+              <Dropdown
+                style={styles.feedbackDropdown}
+                data={leadStatusOptions}
+                labelField="label"
+                valueField="value"
+                value={statusChange?.statusId}
+                onChange={status => setStatusChange((previous: any) => ({ ...previous, statusId: status.value }))}
+                placeholder={leadStatusOptions.length ? 'Select lead status' : 'Loading statuses...'}
+                placeholderStyle={styles.feedbackPlaceholder}
+                selectedTextStyle={styles.feedbackSelectedText}
+                search
+                searchPlaceholder="Search status"
+                inputSearchStyle={styles.statusSearchInput}
+                renderLeftIcon={() => <View style={[styles.statusDot, { marginRight: 10 }, statusChange?.statusId === '' && styles.statusDotEmpty]} />}
+                containerStyle={styles.statusListContainer}
+                maxHeight={300}
+                activeColor="transparent"
+                autoScroll={false}
+                flatListProps={{ ListEmptyComponent: <AppText size={14} color="#7A8499" family="InterMedium" style={styles.statusListEmpty}>No status found</AppText> }}
+                renderItem={(option, selected) => (
+                  <View style={[styles.statusOption, selected && styles.statusOptionSelected]}>
+                    <View style={[styles.statusDot, !selected && styles.statusDotEmpty]} />
+                    <AppText size={15} color={selected ? colors.blue : '#202432'} family={selected ? 'InterBold' : 'InterMedium'} style={{ flex: 1 }}>{option.label}</AppText>
+                    {selected && (
+                      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
+                        <Path d="M5 12.5l4.5 4.5L19 7.5" stroke={colors.blue} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+                      </Svg>
+                    )}
+                  </View>
+                )}
+              />
+
+              <AppText size={13} color="#566078" family="InterBold" style={{ marginTop: 6 }}>NOTE</AppText>
+              <TextInput
+                value={statusChange?.note || ''}
+                onChangeText={note => setStatusChange((previous: any) => ({ ...previous, note }))}
+                placeholder="Add a note (optional)"
+                placeholderTextColor="#98A2B3"
+                multiline
+                maxLength={1000}
+                textAlignVertical="top"
+                style={styles.statusNoteInput}
+              />
+
+              <Pressable
+                accessibilityRole="button"
+                disabled={statusChange?.statusId === '' || statusChangeSubmitting}
+                onPress={submitStatusChange}
+                style={({ pressed }) => [
+                  styles.statusSubmit,
+                  (statusChange?.statusId === '' || statusChangeSubmitting) && styles.feedbackSubmitDisabled,
+                  pressed && styles.feedbackSubmitPressed,
+                ]}
+              >
+                {statusChangeSubmitting
+                  ? <ActivityIndicator color="white" size="small" />
+                  : <AppText size={16} color="white" family="InterBold">Submit</AppText>}
+              </Pressable>
+            </Pressable>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Modal>
+
       <Modal visible={Boolean(numberChoice)} transparent animationType="fade" statusBarTranslucent onRequestClose={() => setNumberChoice(null)}>
         <Pressable style={styles.callWaitingBackdrop} onPress={() => setNumberChoice(null)}>
           <Pressable style={styles.numberChoiceCard} onPress={() => {}}>
@@ -724,7 +862,7 @@ const SummaryCard = ({ count, label, active = false, onPress }: any) => (
   </Pressable>
 );
 
-const LeadCard = ({ item, navigation, onCallPress, onActivityPress, isCalling = false }: any) => {
+const LeadCard = ({ item, navigation, onCallPress, onActivityPress, onStatusPress, isCalling = false }: any) => {
   const phone = cleanPhoneNumber(item?.contact?.phone_number);
   const email = String(item?.contact?.email || '').trim();
   const location = getLeadLocation(item);
@@ -738,9 +876,9 @@ const LeadCard = ({ item, navigation, onCallPress, onActivityPress, isCalling = 
         <AppText size={17} color={colors.blue} family="InterBold" numLines={1}>{item?.name || 'Unnamed firm'}</AppText>
         <AppText size={14} color="#3D4659" family="InterMedium" numLines={1} style={{ marginTop: 5 }}>{item?.contact?.name || 'No contact name'}</AppText>
       </View>
-      <View style={styles.statusBadge}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Change lead status" style={({ pressed }) => [styles.statusBadge, pressed && { opacity: 0.8 }]} onPress={onStatusPress} hitSlop={6}>
         <AppText size={13} color="white" family="InterSemiBold">{item?.status?.display_name || 'Pending'}</AppText>
-      </View>
+      </Pressable>
     </View>
 
     <View style={styles.divider} />
@@ -847,6 +985,15 @@ const styles = StyleSheet.create({
   feedbackNotesLabel: { marginTop: 22, marginBottom: 9 },
   feedbackNotesInput: { minHeight: 132, maxHeight: 180, borderWidth: 1.5, borderColor: '#C9D4E5', borderRadius: 13, backgroundColor: '#F8FAFD', paddingHorizontal: 15, paddingTop: 15, paddingBottom: 15, color: '#202432', fontSize: 15, lineHeight: 21, fontFamily: fonts.InterRegular },
   feedbackSubmit: { height: 56, marginTop: 24, borderRadius: 14, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
+  statusListContainer: { marginTop: 6, borderRadius: 14, borderWidth: 1, borderColor: '#DCE3EE', paddingHorizontal: 8, paddingTop: 8, paddingBottom: 6, backgroundColor: 'white', shadowColor: '#18213D', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 8 },
+  statusSearchInput: { height: 44, borderRadius: 10, borderColor: '#DCE3EE', backgroundColor: '#F4F6FA', color: '#202432', fontSize: 14, fontFamily: fonts.InterRegular, marginBottom: 6 },
+  statusOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 13, borderRadius: 10, marginVertical: 1 },
+  statusOptionSelected: { backgroundColor: colors.blue + '12' },
+  statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.blue },
+  statusDotEmpty: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#B7C0D0' },
+  statusListEmpty: { textAlign: 'center', paddingVertical: 18 },
+  statusNoteInput: { minHeight: 100, maxHeight: 160, borderWidth: 1.5, borderColor: '#C9D4E5', borderRadius: 13, backgroundColor: '#F8FAFD', padding: 13, color: '#202432', fontSize: 15, lineHeight: 21, fontFamily: fonts.InterRegular },
+  statusSubmit: { height: 52, marginTop: 8, borderRadius: 14, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
   feedbackSubmitDisabled: { backgroundColor: '#B8C4D8' },
   feedbackSubmitPressed: { opacity: 0.86 },
   container: { flex: 1, backgroundColor: '#F4F6FA' },

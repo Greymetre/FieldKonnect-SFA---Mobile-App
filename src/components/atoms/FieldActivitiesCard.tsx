@@ -23,6 +23,8 @@ const activityMeta: Record<string, { label: string; image: any; color: string }>
   dealer_board: { label: 'Dealer Board', image: images.person, color: '#e6eefb' },
   wall_painting: { label: 'Wall Painting', image: images.wrench, color: '#faeeda' },
   dealer_factory_visit: { label: 'Dealer Factory Visit', image: images.location, color: '#e1f5ee' },
+  office_work: { label: 'Office Work', image: images.person, color: '#e8eaf2' },
+  w_f_h: { label: 'WFH', image: images.person, color: '#eff2e8' },
   others: { label: 'Others', image: images.other, color: '#fcebeb' },
 };
 

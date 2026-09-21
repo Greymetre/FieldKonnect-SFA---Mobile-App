@@ -13,6 +13,9 @@ export const getLeadDetailsApi = (leadId: string | number) =>
 export const addLeadNoteApi = (leadId: string | number, note: string) =>
   axiosClient.post('api/addNote', { lead_id: leadId, note });
 
+export const updateLeadStatusApi = (leadId: string | number, status: string | number, note?: string) =>
+  axiosClient.post('api/updateLeadStatus', { lead_id: leadId, status, note });
+
 export const getLeadTaskDropdownsApi = () =>
   axiosClient.get('api/getTaskDropdowns');
 
