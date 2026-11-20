@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, AppState, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import ActionSheet, { ActionSheetRef } from 'react-native-actions-sheet';
 import { Dropdown } from 'react-native-element-dropdown';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { PlusAddIcon } from '../../assets/svgs/SvgsFile';
-import { getCallFeedbackStatusesApi, getClickToCallStatusApi, getLeadDetailsApi, getLeadsApi, getPendingCallFeedbackApi, getLeadStatusSourceApi, initiateClickToCallApi, submitCallFeedbackApi, updateLeadStatusApi } from '../../api/query/LeadApi';
+import { getLeadDetailsApi, getLeadsApi, getLeadStatusSourceApi, updateLeadStatusApi } from '../../api/query/LeadApi';
 import AppText from '../../components/AppText/AppText';
 import CustomerCalendar from '../../components/CustomCalendar/CalendarPopupView';
 import LeadActivityModal from './LeadActivityModal';
@@ -13,7 +13,7 @@ import IosDateRangePicker from '../../components/DatePicker/IosDateRangePicker';
 import { colors } from '../../utils/Colors';
 import { fonts } from '../../utils/typography';
 import { composeEmail } from '../../utils/composeEmail';
-import { useAppSelector } from '../../components/redux/Store';
+import { cleanPhoneNumber, usePlivoCall } from './usePlivoCall';
 
 const formatYYYYMMDD = (date: Date | null) => {
   if (!date) return '';
@@ -23,8 +23,6 @@ const formatYYYYMMDD = (date: Date | null) => {
 const formatDisplayDate = (date: Date | null) => date
   ? date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
   : '';
-
-const cleanPhoneNumber = (value: any) => String(value || '').replace(/[^0-9]/g, '');
 
 // Address used for the map: the location captured at the lead's place, else the saved address, else the city.
 const getLeadLocation = (item: any) => {
@@ -49,22 +47,6 @@ const openWebsite = (website: string) => {
   Linking.openURL(url).catch(() => Alert.alert('Unable to open website', 'Please check the website address.'));
 };
 
-const openDialer = async (phone: any) => {
-  const number = cleanPhoneNumber(phone);
-  if (!number) return;
-
-  const dialUrl = Platform.OS === 'ios' ? `telprompt:${number}` : `tel:${number}`;
-  try {
-    await Linking.openURL(dialUrl);
-  } catch {
-    try {
-      await Linking.openURL(`tel:${number}`);
-    } catch {
-      Alert.alert('Unable to open dialer', 'A phone application is not available on this device.');
-    }
-  }
-};
-
 const openWhatsApp = (phone: any) => {
   let number = cleanPhoneNumber(phone);
   if (number.length === 10) number = `91${number}`;
@@ -74,23 +56,10 @@ const openWhatsApp = (phone: any) => {
   );
 };
 
-const toPlivoE164 = (phone: string) => {
-  const digits = cleanPhoneNumber(phone);
-  if (!digits) return '';
-  if (digits.length > 10) return `+${digits}`;
-  return `+91${digits}`;
-};
-
-const formatCallDuration = (value: any) => {
-  const seconds = Math.max(0, Number(value) || 0);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-};
-
 const LEADS_PAGE_SIZE = 50;
 
 const LeadKonnect = ({ navigation }: any) => {
-  const { user } = useAppSelector(state => state.auth);
-  const canUsePlivoCalling = user?.call_management === true || Number(user?.call_management) === 1;
+  const { canUsePlivoCalling, startCall, isCalling, callUi } = usePlivoCall({ onFeedbackSaved: () => fetchLeads(1) });
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [leads, setLeads] = useState<any[]>([]);
@@ -125,18 +94,6 @@ const LeadKonnect = ({ navigation }: any) => {
   const [showCal, setShowCal] = useState(false);
   const [rangeType, setRangeType] = useState('custom');
   const filterSheetRef = useRef<ActionSheetRef>(null);
-  const feedbackSheetRef = useRef<ActionSheetRef>(null);
-  // Calls already prompted on this screen, so a dismissed form is not reopened on every app resume.
-  const promptedCallIdsRef = useRef<Set<string>>(new Set());
-  const [callingLeadIds, setCallingLeadIds] = useState<Set<number | string>>(new Set());
-  const [callWaiting, setCallWaiting] = useState({ visible: false, leadName: '', phase: 'Connecting to Plivo...' });
-  const [feedbackStatuses, setFeedbackStatuses] = useState<any[]>([]);
-  const [feedbackLoading, setFeedbackLoading] = useState(false);
-  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
-  const [callFeedback, setCallFeedback] = useState<any>({ callLogId: '', leadName: '', duration: 0, statusId: '', message: '' });
-  const callPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const callTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const terminalHandledRef = useRef(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -150,18 +107,6 @@ const LeadKonnect = ({ navigation }: any) => {
     });
   }, [canUsePlivoCalling, navigation]);
 
-  const stopCallTracking = useCallback(() => {
-    if (callPollRef.current) clearInterval(callPollRef.current);
-    if (callTimeoutRef.current) clearTimeout(callTimeoutRef.current);
-    callPollRef.current = null;
-    callTimeoutRef.current = null;
-  }, []);
-
-  const closeCallWaiting = useCallback(() => {
-    setCallWaiting(prev => ({ ...prev, visible: false }));
-  }, []);
-
-  useEffect(() => stopCallTracking, [stopCallTracking]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search.trim()), 350);
@@ -278,90 +223,6 @@ const LeadKonnect = ({ navigation }: any) => {
   })), [leadStatuses]);
   const activeFilterCount = Number(Boolean(selectedUser)) + Number(selectedStatus !== -1 && selectedStatus !== '-1') + Number(Boolean(selectedSource)) + Number(Boolean(selectedDesignation)) + Number(Boolean(startDate && endDate));
 
-  const setCallingState = (leadId: string | number, isCalling: boolean) => {
-    setCallingLeadIds(prev => {
-      const next = new Set(prev);
-      if (isCalling) {
-        next.add(leadId);
-      } else {
-        next.delete(leadId);
-      }
-      return next;
-    });
-  };
-
-  const loadFeedbackStatuses = useCallback(async () => {
-    try {
-      setFeedbackLoading(true);
-      const response = await getCallFeedbackStatusesApi();
-      const records = response?.data?.data || [];
-      const options = (Array.isArray(records) ? records : []).map((status: any) => ({
-        label: status?.display_name || status?.status_name || status?.name || 'Status',
-        value: status?.id,
-      })).filter((status: any) => status.value !== undefined && status.value !== null);
-      setFeedbackStatuses(options);
-      return options;
-    } catch (error: any) {
-      Alert.alert('Unable to load statuses', error?.response?.data?.message || 'Please check your connection and try again.');
-      return [];
-    } finally {
-      setFeedbackLoading(false);
-    }
-  }, []);
-
-  // The status list is the lead statuses; it starts on the lead's current status.
-  const openCallFeedback = useCallback(async (callLogId: string | number, leadName: string, duration: any, leadStatusId?: any) => {
-    promptedCallIdsRef.current.add(String(callLogId));
-    const statusId = leadStatusId === undefined || leadStatusId === null || leadStatusId === '' ? '' : Number(leadStatusId);
-    setCallFeedback({ callLogId, leadName, duration: Number(duration) || 0, statusId, message: '' });
-    feedbackSheetRef.current?.show();
-    if (!feedbackStatuses.length) await loadFeedbackStatuses();
-  }, [feedbackStatuses.length, loadFeedbackStatuses]);
-
-  // Inbound callbacks, and outbound calls whose polling stopped while the app was
-  // in the background, are picked up from the server when the agent returns.
-  const checkPendingFeedback = useCallback(async () => {
-    if (!canUsePlivoCalling || callPollRef.current) return;
-    try {
-      const response = await getPendingCallFeedbackApi();
-      const pending = response?.data?.data;
-      if (!pending?.call_log_id || promptedCallIdsRef.current.has(String(pending.call_log_id))) return;
-      openCallFeedback(pending.call_log_id, pending.customer_name || 'Customer', pending.duration, pending.lead_status_id);
-    } catch {
-      // Feedback prompt is best-effort; the call stays visible in Call History.
-    }
-  }, [canUsePlivoCalling, openCallFeedback]);
-
-  useFocusEffect(useCallback(() => {
-    checkPendingFeedback();
-    const subscription = AppState.addEventListener('change', state => {
-      if (state === 'active') checkPendingFeedback();
-    });
-    return () => subscription.remove();
-  }, [checkPendingFeedback]));
-
-  const submitCallFeedback = async () => {
-    const message = String(callFeedback.message || '').trim();
-    if (callFeedback.statusId === '' || !message || feedbackSubmitting) return;
-
-    try {
-      setFeedbackSubmitting(true);
-      await submitCallFeedbackApi({
-        call_log_id: callFeedback.callLogId,
-        feedback_status_id: callFeedback.statusId,
-        message,
-      });
-      feedbackSheetRef.current?.hide();
-      setCallFeedback({ callLogId: '', leadName: '', duration: 0, statusId: '', message: '' });
-      Alert.alert('Call record saved', 'The lead status and call notes have been updated.');
-      fetchLeads(1);
-    } catch (error: any) {
-      Alert.alert('Unable to save call record', error?.response?.data?.message || 'Please try again.');
-    } finally {
-      setFeedbackSubmitting(false);
-    }
-  };
-
   const openStatusChange = (item: any) => {
     const statusId = item?.status?.id;
     setStatusChange({ lead: item, statusId: statusId ? Number(statusId) : '', note: '' });
@@ -429,93 +290,15 @@ const LeadKonnect = ({ navigation }: any) => {
     handlePlivoCall(item);
   };
 
-  const handlePlivoCall = async (item: any, selectedNumber?: string) => {
-    const phone = toPlivoE164(selectedNumber || item?.contact?.phone_number || item?.phone || '');
-    if (!phone) return;
+  const handlePlivoCall = (item: any, selectedNumber?: string) => startCall({
+    key: item?.id || item?.lead_id || 'lead',
+    phone: selectedNumber || item?.contact?.phone_number || item?.phone || '',
+    name: item?.contact?.name || item?.name || 'Customer',
+    leadId: item?.id,
+    leadName: item?.name || item?.contact?.name || '',
+    leadStatusId: item?.status?.id,
+  });
 
-    if (!canUsePlivoCalling) {
-      openDialer(phone);
-      return;
-    }
-
-    const leadId = item?.id || item?.lead_id || 'lead';
-    stopCallTracking();
-    terminalHandledRef.current = false;
-    setCallingState(leadId, true);
-    setCallWaiting({
-      visible: true,
-      leadName: item?.contact?.name || item?.name || 'Customer',
-      phase: 'Connecting to Plivo...',
-    });
-
-    try {
-      const payload = {
-        to: phone,
-        lead_id: item?.id,
-        lead_name: item?.name || item?.contact?.name || '',
-      };
-      const response = await initiateClickToCallApi(payload);
-      const callLogId = response?.data?.data?.call_log_id;
-      setCallWaiting(prev => ({ ...prev, phase: 'Please wait. Your phone will ring shortly.' }));
-
-      if (!callLogId) {
-        callTimeoutRef.current = setTimeout(() => {
-          closeCallWaiting();
-          setCallingState(leadId, false);
-        }, 8000);
-        return;
-      }
-
-      callPollRef.current = setInterval(async () => {
-        try {
-          const statusResponse = await getClickToCallStatusApi(callLogId);
-          const statusData = statusResponse?.data?.data || {};
-          const callStatus = String(statusData?.status || '').toLowerCase();
-          const isAnswered = Boolean(statusData?.answered);
-          const isCompleted = Boolean(statusData?.completed) || ['completed', 'hangup', 'failed', 'busy', 'no-answer', 'timeout', 'cancel', 'canceled'].includes(callStatus);
-
-          if (isCompleted && !terminalHandledRef.current) {
-            terminalHandledRef.current = true;
-            stopCallTracking();
-            closeCallWaiting();
-            setCallingState(leadId, false);
-            if (statusData?.requires_feedback !== false) {
-              setTimeout(() => openCallFeedback(callLogId, item?.contact?.name || item?.name || 'Customer', statusData?.duration, item?.status?.id), 300);
-            }
-            return;
-          }
-
-          if (callStatus.includes('ring') || isAnswered || callStatus === 'agent-answered') {
-            setCallWaiting(prev => ({ ...prev, phase: 'Your phone is ringing...' }));
-            setTimeout(closeCallWaiting, 700);
-          }
-        } catch {
-          // Ignore a transient polling failure and retry on the next interval.
-        }
-      }, 1500);
-
-      callTimeoutRef.current = setTimeout(() => {
-        stopCallTracking();
-        closeCallWaiting();
-        setCallingState(leadId, false);
-        Alert.alert('Call tracking stopped', 'The call status could not be confirmed. You can check it in Call History.');
-      }, 60 * 60 * 1000);
-    } catch (error: any) {
-      stopCallTracking();
-      closeCallWaiting();
-      setCallingState(leadId, false);
-      const status = error?.response?.status;
-      if (status === 404 || status === 405) {
-        openDialer(phone);
-      } else {
-        Alert.alert(
-          'Call failed',
-          error?.response?.data?.message || 'Unable to start Plivo call. We will try normal dialer.',
-        );
-        openDialer(phone);
-      }
-    }
-  };
 
   const openFilters = () => {
     setDraftUser(selectedUser);
@@ -601,7 +384,7 @@ const LeadKonnect = ({ navigation }: any) => {
           <FlatList
             data={leads}
             keyExtractor={(item, index) => String(item?.id ?? item?.lead_id ?? index)}
-            renderItem={({ item }) => <LeadCard item={item} navigation={navigation} onCallPress={requestLeadCall} onActivityPress={() => openLeadActivity(item?.id || item?.lead_id)} onStatusPress={() => openStatusChange(item)} isCalling={callingLeadIds.has(item.id || item?.lead_id)} />}
+            renderItem={({ item }) => <LeadCard item={item} navigation={navigation} onCallPress={requestLeadCall} onActivityPress={() => openLeadActivity(item?.id || item?.lead_id)} onStatusPress={() => openStatusChange(item)} isCalling={isCalling(item?.id || item?.lead_id || 'lead')} />}
             style={styles.leadListScroll}
             contentContainerStyle={styles.leadListContent}
             showsVerticalScrollIndicator={false}
@@ -654,72 +437,6 @@ const LeadKonnect = ({ navigation }: any) => {
         </View>
       </ActionSheet>
 
-      <ActionSheet ref={feedbackSheetRef} gestureEnabled={false} containerStyle={styles.feedbackSheetContainer} keyboardHandlerEnabled>
-        <View style={styles.feedbackContent}>
-          <View style={styles.feedbackHandle} />
-          <View style={styles.feedbackHeader}>
-            <View style={styles.feedbackHeaderCopy}>
-              <AppText size={22} color="#202432" family="InterBold">Call Ended</AppText>
-              <AppText size={15} color="#667085" family="InterMedium" style={styles.feedbackCustomer}>
-                {callFeedback.leadName} · {formatCallDuration(callFeedback.duration)}
-              </AppText>
-            </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close call feedback" style={styles.closeButton} onPress={() => feedbackSheetRef.current?.hide()}>
-              <AppText size={24} color="#566078">×</AppText>
-            </Pressable>
-          </View>
-
-          <View style={styles.feedbackLabelRow}>
-            <AppText size={13} color="#566078" family="InterBold">LEAD STATUS <AppText size={13} color="#E5485D" family="InterBold">*</AppText></AppText>
-          </View>
-          <Dropdown
-            style={styles.feedbackDropdown}
-            data={feedbackStatuses}
-            labelField="label"
-            valueField="value"
-            value={callFeedback.statusId}
-            onChange={status => setCallFeedback((previous: any) => ({ ...previous, statusId: status.value }))}
-            placeholder={feedbackLoading ? 'Loading statuses...' : 'Select lead status'}
-            placeholderStyle={styles.feedbackPlaceholder}
-            selectedTextStyle={styles.feedbackSelectedText}
-            disable={feedbackLoading}
-          />
-          {!feedbackLoading && feedbackStatuses.length === 0 && (
-            <Pressable onPress={loadFeedbackStatuses} style={styles.retryStatuses}>
-              <AppText size={13} color={colors.blue} family="InterBold">Retry loading statuses</AppText>
-            </Pressable>
-          )}
-
-          <AppText size={13} color="#566078" family="InterBold" style={styles.feedbackNotesLabel}>
-            NOTES <AppText size={13} color="#E5485D" family="InterBold">*</AppText>
-          </AppText>
-          <TextInput
-            value={callFeedback.message}
-            onChangeText={message => setCallFeedback((previous: any) => ({ ...previous, message }))}
-            placeholder="What happened on this call?"
-            placeholderTextColor="#98A2B3"
-            multiline
-            maxLength={1000}
-            textAlignVertical="top"
-            style={styles.feedbackNotesInput}
-          />
-
-          <Pressable
-            accessibilityRole="button"
-            disabled={callFeedback.statusId === '' || !String(callFeedback.message || '').trim() || feedbackSubmitting}
-            onPress={submitCallFeedback}
-            style={({ pressed }) => [
-              styles.feedbackSubmit,
-              (callFeedback.statusId === '' || !String(callFeedback.message || '').trim() || feedbackSubmitting) && styles.feedbackSubmitDisabled,
-              pressed && styles.feedbackSubmitPressed,
-            ]}
-          >
-            {feedbackSubmitting
-              ? <ActivityIndicator color="white" size="small" />
-              : <AppText size={16} color="white" family="InterBold">Save Call Record</AppText>}
-          </Pressable>
-        </View>
-      </ActionSheet>
 
       <Modal visible={Boolean(statusChange)} transparent animationType="fade" statusBarTranslucent onRequestClose={closeStatusChange}>
         <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -829,26 +546,7 @@ const LeadKonnect = ({ navigation }: any) => {
         </Pressable>
       </Modal>
 
-      <Modal visible={callWaiting.visible} transparent animationType="fade" statusBarTranslucent onRequestClose={closeCallWaiting}>
-        <View style={styles.callWaitingBackdrop}>
-          <View style={styles.callWaitingCard}>
-            <View style={styles.callPulseOuter}>
-              <View style={styles.callPulseInner}>
-                <Svg width={34} height={34} viewBox="0 0 24 24" fill="none">
-                  <Path d="M6.62 10.79a15.46 15.46 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z" fill="white" />
-                </Svg>
-              </View>
-            </View>
-            <AppText size={22} color="#202432" family="InterBold" style={styles.callWaitingTitle}>Preparing your call</AppText>
-            <AppText size={15} color="#59657A" family="InterMedium" style={styles.callWaitingName}>{callWaiting.leadName}</AppText>
-            <ActivityIndicator size="small" color={colors.blue} style={styles.callWaitingLoader} />
-            <AppText size={14} color="#59657A" family="InterMedium" style={styles.callWaitingMessage}>{callWaiting.phase}</AppText>
-            <Pressable style={styles.callWaitingClose} onPress={closeCallWaiting}>
-              <AppText size={14} color={colors.blue} family="InterBold">Close</AppText>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      {callUi}
       <LeadActivityModal visible={Boolean(activityLeadId)} loading={activityLoading} activity={leadActivity} navigation={navigation} onClose={() => setActivityLeadId(null)} />
       <CustomerCalendar showCal={showCal} setShowCal={setCalendarVisibility} range={rangeType} minimumDate={null} initialStartDate={draftStartDate} initialEndDate={draftEndDate} setRange={setRangeType} onApplyClick={(start, end, type) => { setDraftStartDate(start); setDraftEndDate(end); setRangeType(type || 'custom'); }} />
     </View>
@@ -963,28 +661,9 @@ const styles = StyleSheet.create({
   numberOption: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: colors.blue + '30', backgroundColor: colors.blue + '08' },
   numberOptionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: colors.blue + '12', alignItems: 'center', justifyContent: 'center' },
   callWaitingBackdrop: { flex: 1, backgroundColor: 'rgba(13, 25, 48, 0.72)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  callWaitingCard: { width: '100%', maxWidth: 360, borderRadius: 28, backgroundColor: 'white', alignItems: 'center', paddingHorizontal: 28, paddingTop: 34, paddingBottom: 24 },
-  callPulseOuter: { width: 92, height: 92, borderRadius: 46, backgroundColor: '#E8F0FF', alignItems: 'center', justifyContent: 'center', marginBottom: 22 },
-  callPulseInner: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
-  callWaitingTitle: { textAlign: 'center' },
-  callWaitingName: { textAlign: 'center', marginTop: 8 },
-  callWaitingLoader: { marginTop: 24, marginBottom: 13 },
-  callWaitingMessage: { textAlign: 'center', lineHeight: 21, minHeight: 42 },
-  callWaitingClose: { marginTop: 20, paddingHorizontal: 24, paddingVertical: 11, borderRadius: 18, backgroundColor: '#EDF3FF' },
-  feedbackSheetContainer: { borderTopLeftRadius: 28, borderTopRightRadius: 28 },
-  feedbackContent: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 34 : 24 },
-  feedbackHandle: { width: 72, height: 5, borderRadius: 3, backgroundColor: '#CCD5E4', alignSelf: 'center', marginBottom: 22 },
-  feedbackHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 27 },
-  feedbackHeaderCopy: { flex: 1 },
-  feedbackCustomer: { marginTop: 6 },
-  feedbackLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 9 },
   feedbackDropdown: { height: 56, borderWidth: 1.5, borderColor: '#C9D4E5', borderRadius: 13, paddingHorizontal: 15, backgroundColor: '#F8FAFD' },
   feedbackPlaceholder: { color: '#98A2B3', fontSize: 15, fontFamily: fonts.InterMedium },
   feedbackSelectedText: { color: '#202432', fontSize: 15, fontFamily: fonts.InterSemiBold },
-  retryStatuses: { alignSelf: 'flex-start', paddingVertical: 9 },
-  feedbackNotesLabel: { marginTop: 22, marginBottom: 9 },
-  feedbackNotesInput: { minHeight: 132, maxHeight: 180, borderWidth: 1.5, borderColor: '#C9D4E5', borderRadius: 13, backgroundColor: '#F8FAFD', paddingHorizontal: 15, paddingTop: 15, paddingBottom: 15, color: '#202432', fontSize: 15, lineHeight: 21, fontFamily: fonts.InterRegular },
-  feedbackSubmit: { height: 56, marginTop: 24, borderRadius: 14, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
   statusListContainer: { marginTop: 6, borderRadius: 14, borderWidth: 1, borderColor: '#DCE3EE', paddingHorizontal: 8, paddingTop: 8, paddingBottom: 6, backgroundColor: 'white', shadowColor: '#18213D', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 8 },
   statusSearchInput: { height: 44, borderRadius: 10, borderColor: '#DCE3EE', backgroundColor: '#F4F6FA', color: '#202432', fontSize: 14, fontFamily: fonts.InterRegular, marginBottom: 6 },
   statusOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 13, borderRadius: 10, marginVertical: 1 },

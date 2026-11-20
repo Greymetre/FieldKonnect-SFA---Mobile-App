@@ -12,6 +12,7 @@ import LeadActivityModal from './LeadActivityModal';
 import { colors } from '../../utils/Colors';
 import { fonts } from '../../utils/typography';
 import { composeEmail } from '../../utils/composeEmail';
+import { usePlivoCall } from './usePlivoCall';
 
 const mapLeadData = (lead: any) => ({
   id: lead?.id,
@@ -101,6 +102,20 @@ const LeadDetails = ({ route, navigation }: any) => {
   const [opportunityError, setOpportunityError] = useState('');
   const [showOpportunityDatePicker, setShowOpportunityDatePicker] = useState(false);
   const { coords, loading: locationLoading, error: locationError, refreshLocation } = useLocationHook();
+  const { startCall, isCalling, callUi } = usePlivoCall({ onFeedbackSaved: () => fetchDetails() });
+
+  // Same Plivo click-to-call flow as the lead list, for any number on this lead.
+  const callNumber = (phone: any, name?: string) => {
+    if (!phone || isCalling(String(phone))) return;
+    startCall({
+      key: String(phone),
+      phone: String(phone),
+      name: name || data.customer || data.firm || 'Customer',
+      leadId: data.id ?? selectedLead?.id,
+      leadName: data.firm || data.customer || '',
+      leadStatusId: data.statusId,
+    });
+  };
 
   const fetchDetails = useCallback(async () => {
     if (!selectedLead?.id) {
@@ -348,6 +363,7 @@ const LeadDetails = ({ route, navigation }: any) => {
   }
 
   return (
+    <>
     <ScrollView style={styles.container} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
       <View style={styles.profileCard}>
         <View style={styles.profileTopRow}>
@@ -385,8 +401,8 @@ const LeadDetails = ({ route, navigation }: any) => {
         <FieldGrid fields={[
           { label: 'Customer Name', value: data.customer },
           { label: 'Designation', value: data.designation },
-          { label: 'Mobile Number', value: data.phone, onPress: data.phone ? () => Linking.openURL(`tel:${data.phone}`) : undefined },
-          { label: 'Alternate Number', value: data.alternateNumber, onPress: data.alternateNumber ? () => Linking.openURL(`tel:${data.alternateNumber}`) : undefined },
+          { label: 'Mobile Number', value: data.phone, onPress: data.phone ? () => callNumber(data.phone) : undefined },
+          { label: 'Alternate Number', value: data.alternateNumber, onPress: data.alternateNumber ? () => callNumber(data.alternateNumber) : undefined },
           { label: 'Email Id', value: data.email, onPress: data.email ? () => composeEmail(data.email) : undefined },
         ]} />
       </Section>
@@ -421,8 +437,8 @@ const LeadDetails = ({ route, navigation }: any) => {
               <AppText size={15} color="#30384A" family="InterBold">{shown(contact?.name, 'Unnamed contact')}</AppText>
               {!!fieldValue(contact?.title) && <AppText size={13} color="#8991A3" family="InterMedium" style={styles.contactMeta}>{contact.title}</AppText>}
               {!!fieldValue(contact?.phone_number) && (
-                <Pressable style={styles.contactLink} onPress={() => Linking.openURL(`tel:${contact.phone_number}`)}>
-                  <DetailIcon type="phone" size={16} />
+                <Pressable style={styles.contactLink} disabled={isCalling(String(contact.phone_number))} onPress={() => callNumber(contact.phone_number, contact?.name)}>
+                  {isCalling(String(contact.phone_number)) ? <ActivityIndicator size="small" color={colors.blue} /> : <DetailIcon type="phone" size={16} />}
                   <AppText size={14} color={colors.blue} family="InterMedium">{contact.phone_number}</AppText>
                 </Pressable>
               )}
@@ -628,6 +644,8 @@ const LeadDetails = ({ route, navigation }: any) => {
         </KeyboardAvoidingView>
       </Modal>
     </ScrollView>
+    {callUi}
+    </>
   );
 };
 
