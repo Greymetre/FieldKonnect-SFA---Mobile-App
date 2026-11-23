@@ -13,6 +13,7 @@ import { colors } from '../../utils/Colors';
 import { fonts } from '../../utils/typography';
 import { composeEmail } from '../../utils/composeEmail';
 import { usePlivoCall } from './usePlivoCall';
+import { CallHistoryCard, CallingProgressCard, ContactsCard, DraftsCard, FilesCard, TasksCard, useLeadFlow } from './LeadFlowSections';
 
 const mapLeadData = (lead: any) => ({
   id: lead?.id,
@@ -54,7 +55,6 @@ const fieldValue = (value: any) => {
   const text = String(value ?? '').trim();
   return text && text.toUpperCase() !== 'N/A' ? text : '';
 };
-const formatFileSize = (bytes: any) => `${(Number(bytes || 0) / 1024).toFixed(1)} KB`;
 
 const formatTaskDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 const displayTaskDate = (date: Date) => date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -102,12 +102,14 @@ const LeadDetails = ({ route, navigation }: any) => {
   const [opportunityError, setOpportunityError] = useState('');
   const [showOpportunityDatePicker, setShowOpportunityDatePicker] = useState(false);
   const { coords, loading: locationLoading, error: locationError, refreshLocation } = useLocationHook();
-  const { startCall, isCalling, callUi } = usePlivoCall({ onFeedbackSaved: () => fetchDetails() });
+  const { confirmAndCall, isCalling, callUi } = usePlivoCall({ onFeedbackSaved: () => fetchDetails() });
+  // CRM lead flow: contacts + calling progress, call history, tasks, drafts, files.
+  const { flow, refresh: refreshFlow } = useLeadFlow(selectedLead?.id);
 
   // Same Plivo click-to-call flow as the lead list, for any number on this lead.
   const callNumber = (phone: any, name?: string) => {
     if (!phone || isCalling(String(phone))) return;
-    startCall({
+    confirmAndCall({
       key: String(phone),
       phone: String(phone),
       name: name || data.customer || data.firm || 'Customer',
@@ -129,6 +131,7 @@ const LeadDetails = ({ route, navigation }: any) => {
       const [response, checkinResponse] = await Promise.all([
         getLeadDetailsApi(selectedLead.id),
         getLeadCheckinsApi().catch(() => null),
+        refreshFlow(),
       ]);
       setData(mapLeadData(response?.data?.data || selectedLead));
       setActivity(response?.data?.notes_tasks || []);
@@ -141,7 +144,7 @@ const LeadDetails = ({ route, navigation }: any) => {
     } finally {
       setLoading(false);
     }
-  }, [selectedLead]);
+  }, [selectedLead, refreshFlow]);
 
   useFocusEffect(useCallback(() => {
     fetchDetails();
@@ -371,7 +374,10 @@ const LeadDetails = ({ route, navigation }: any) => {
           <View style={styles.profileText}>
             <AppText size={21} color="white" family="InterBold" numLines={1}>{shown(data.customer, 'Unnamed contact')}</AppText>
             <AppText size={15} color="white" family="InterMedium" opacity={0.82} numLines={1}>{shown(data.firm, 'Unnamed firm')}</AppText>
-            <View style={styles.statusChip}><AppText size={12} color="white" family="InterBold">{data.type}</AppText></View>
+            <View style={styles.chipRow}>
+              <View style={styles.statusChip}><AppText size={12} color="white" family="InterBold">{data.type}</AppText></View>
+              {flow.external_lead_id ? <View style={styles.statusChip}><AppText size={12} color="white" family="InterBold">Lead ID {flow.external_lead_id}</AppText></View> : null}
+            </View>
           </View>
           <Pressable style={styles.editButton} onPress={() => navigation.navigate('EditLead', { lead: data })}>
             <DetailIcon type="edit" size={18} color="white" />
@@ -384,6 +390,9 @@ const LeadDetails = ({ route, navigation }: any) => {
           <View><AppText size={11} color="white" family="InterSemiBold" opacity={0.65}>CREATED</AppText><AppText size={14} color="white" family="InterBold">{shown(data.generated, 'Not set')}</AppText></View>
         </View>
       </View>
+
+      <CallingProgressCard flow={flow} leadId={data.id ?? selectedLead?.id} leadName={data.firm || data.customer || ''} leadStatusId={data.statusId} call={confirmAndCall} isCalling={isCalling} />
+      <ContactsCard flow={flow} leadId={data.id ?? selectedLead?.id} leadName={data.firm || data.customer || ''} leadStatusId={data.statusId} call={confirmAndCall} isCalling={isCalling} />
 
       <Section title="Lead Details">
         <FieldGrid fields={[
@@ -429,47 +438,8 @@ const LeadDetails = ({ route, navigation }: any) => {
         </View>
       </Section>
 
-      {data.contacts.length > 0 && (
-        <Section title={`Contacts (${data.contacts.length})`}>
-          {data.contacts.map((contact: any, index: number) => (
-            <View key={contact?.id ?? index}>
-              {index > 0 && <View style={styles.listDivider} />}
-              <AppText size={15} color="#30384A" family="InterBold">{shown(contact?.name, 'Unnamed contact')}</AppText>
-              {!!fieldValue(contact?.title) && <AppText size={13} color="#8991A3" family="InterMedium" style={styles.contactMeta}>{contact.title}</AppText>}
-              {!!fieldValue(contact?.phone_number) && (
-                <Pressable style={styles.contactLink} disabled={isCalling(String(contact.phone_number))} onPress={() => callNumber(contact.phone_number, contact?.name)}>
-                  {isCalling(String(contact.phone_number)) ? <ActivityIndicator size="small" color={colors.blue} /> : <DetailIcon type="phone" size={16} />}
-                  <AppText size={14} color={colors.blue} family="InterMedium">{contact.phone_number}</AppText>
-                </Pressable>
-              )}
-              {!!fieldValue(contact?.email) && (
-                <Pressable style={styles.contactLink} onPress={() => composeEmail(contact.email)}>
-                  <DetailIcon type="email" size={16} />
-                  <AppText size={14} color={colors.blue} family="InterMedium">{contact.email}</AppText>
-                </Pressable>
-              )}
-            </View>
-          ))}
-        </Section>
-      )}
-
-      <Section title="Files">
-        {data.files.length ? data.files.map((file: any, index: number) => (
-          <View key={file?.id ?? index}>
-            {index > 0 && <View style={styles.listDivider} />}
-            <Pressable style={styles.fileRow} onPress={() => file?.url && Linking.openURL(file.url)}>
-              <View style={styles.detailIcon}><DetailIcon type="note" size={18} /></View>
-              <View style={styles.detailText}>
-                <AppText size={14} color="#30384A" family="InterSemiBold" numLines={1}>{shown(file?.file_name, 'File')}</AppText>
-                <AppText size={12} color="#8991A3" family="InterRegular" style={styles.contactMeta}>{`${String(file?.mime_type || '').toUpperCase()} • ${formatFileSize(file?.size)}`}</AppText>
-              </View>
-            </Pressable>
-          </View>
-        )) : <AppText size={14} color="#A7ADBA" family="InterRegular">No files uploaded</AppText>}
-      </Section>
-
       <View style={styles.primaryActions}>
-        <Pressable style={[styles.primaryAction, (checkingIn || checkinId) && styles.primaryActionDisabled]} onPress={handleCheckIn} disabled={checkingIn || Boolean(checkinId)}>
+        <Pressable style={[styles.primaryAction, (checkingIn || Boolean(checkinId)) && styles.primaryActionDisabled]} onPress={handleCheckIn} disabled={checkingIn || Boolean(checkinId)}>
           {checkingIn ? <ActivityIndicator size="small" color={colors.blue} /> : <DetailIcon type="checkin" />}
           <AppText size={15} color={colors.blue} family="InterBold">{checkingIn ? 'Checking In...' : checkinId ? 'Checked In' : 'Check In'}</AppText>
         </Pressable>
@@ -486,6 +456,12 @@ const LeadDetails = ({ route, navigation }: any) => {
           <ActionTile icon="opportunity" label="Opportunity" onPress={openOpportunityModal} />
         </View>
       </Section>
+
+      <CallHistoryCard flow={flow} navigation={navigation} />
+      <TasksCard flow={flow} onChanged={refreshFlow} onAddTask={openTaskModal} />
+      <DraftsCard type="email" flow={flow} leadId={data.id ?? selectedLead?.id} onChanged={refreshFlow} />
+      <DraftsCard type="linkedin" flow={flow} leadId={data.id ?? selectedLead?.id} onChanged={refreshFlow} />
+      <FilesCard flow={flow} leadId={data.id ?? selectedLead?.id} onChanged={refreshFlow} />
 
       <View style={styles.timelineRow}>
         <TimelineCard label="Lead Generated" value={shown(data.generated, 'N/A')} placeholder={!data.generated} />
@@ -743,6 +719,7 @@ const styles = StyleSheet.create({
   profileTopRow: { flexDirection: 'row', alignItems: 'center', padding: 18, gap: 14 },
   avatar: { width: 70, height: 70, borderRadius: 35, backgroundColor: 'rgba(255,255,255,0.17)', borderWidth: 2, borderColor: 'rgba(255,255,255,0.55)', alignItems: 'center', justifyContent: 'center' },
   profileText: { flex: 1, minWidth: 0, gap: 4 },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   statusChip: { alignSelf: 'flex-start', marginTop: 4, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
   editButton: { height: 40, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 11, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.13)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
   profileFooter: { minHeight: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: 16, paddingVertical: 11, backgroundColor: 'rgba(0,0,0,0.08)', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.16)' },

@@ -46,6 +46,7 @@ import TaskList from '../screens/TaskList';
 import OpportunityList from '../screens/LeadKonnect/OpportunityList';
 import CallHistory from '../screens/LeadKonnect/CallHistory';
 import CallDetails from '../screens/LeadKonnect/CallDetails';
+import DraftApprovals from '../screens/LeadKonnect/DraftApprovals';
 import Documents from '../screens/Documents';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -221,6 +222,10 @@ const Routes = () => {
         <Stack.Screen name='CreateLead' component={CreateLead} options={{
           headerShown: true,
           title: 'Add New Lead'
+        }} />
+        <Stack.Screen name='DraftApprovals' component={DraftApprovals} options={{
+          headerShown: true,
+          title: 'Draft Approval'
         }} />
         <Stack.Screen name='LeadDetails' component={LeadDetails} options={{
           headerShown: true,

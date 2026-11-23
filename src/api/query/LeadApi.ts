@@ -1,5 +1,6 @@
 import axiosClient from '../AxiosClient';
 import { API_ENDPOINT } from '../ApiUrls';
+import axiosClientForm from '../AxiosForm';
 
 export const getLeadStatusSourceApi = () =>
   axiosClient.get('api/getLeadStatusSource');
@@ -103,3 +104,61 @@ export const generateCallTranscriptApi = (callLogId: string | number, regenerate
 
 export const getMyCallHistoryApi = (params?: Record<string, any>) =>
   axiosClient.get(API_ENDPOINT.MY_CALL_HISTORY, { params });
+
+// ---- CRM lead flow (same as the web lead page) -------------------------------
+
+/** Contacts with calling progress, call history, tasks, Email/LinkedIn drafts and files. */
+export const getLeadFlowApi = (leadId: string | number) =>
+  axiosClient.get('api/lead-flow', { params: { lead_id: leadId } });
+
+/** Post-call sheet options: call outcomes, lead types and follow-up channels. */
+export const getLeadCallOptionsApi = () =>
+  axiosClient.get('api/lead-call-options');
+
+export type CallOutcomePayload = {
+  call_log_id: string | number;
+  /** Call outcome (Call Done, No Response, Switch Off, Wrong Number, Call Back). */
+  call_status: string | number;
+  /** Lead type (0 = Pending). */
+  status: string | number;
+  remark: string;
+  /** For "Call Done": whatsapp / linkedin / email, or none. */
+  details_via?: string[];
+  /** Y-m-dTH:i — needed for "Call Back" or when details must be sent. */
+  follow_up_at?: string;
+};
+
+export const submitCallOutcomeApi = (payload: CallOutcomePayload) =>
+  axiosClient.post('api/call-feedback', payload);
+
+export const getDraftApproversApi = () =>
+  axiosClient.get('api/draft-approvers');
+
+export const saveLeadDraftApi = (payload: {
+  draft_id?: string | number;
+  lead_id?: string | number;
+  type?: 'email' | 'linkedin';
+  note: string;
+  approver_id: string | number;
+  /** The lead contact the draft is written for. */
+  lead_contact_id: string | number;
+}) => axiosClient.post('api/lead-drafts', payload);
+
+export const deleteLeadDraftApi = (draftId: string | number) =>
+  axiosClient.post('api/lead-drafts/delete', { draft_id: draftId });
+
+export const getDraftApprovalsApi = (params: { type: 'email' | 'linkedin'; state?: 'pending' | 'changes' | 'approved'; search?: string; page?: number }) =>
+  axiosClient.get('api/draft-approvals', { params });
+
+export const approveLeadDraftApi = (draftId: string | number, note?: string) =>
+  axiosClient.post('api/draft-approvals/approve', { draft_id: draftId, note });
+
+/** Approver asks for changes: the draft goes back to the agent with this feedback. */
+export const sendDraftFeedbackApi = (draftId: string | number, feedback: string) =>
+  axiosClient.post('api/draft-approvals/feedback', { draft_id: draftId, feedback });
+
+export const uploadLeadFilesApi = (formData: FormData) =>
+  axiosClientForm.post('api/lead-files', formData);
+
+export const deleteLeadFileApi = (mediaId: string | number) =>
+  axiosClient.post('api/lead-files/delete', { media_id: mediaId });

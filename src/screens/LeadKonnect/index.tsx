@@ -5,7 +5,7 @@ import { Dropdown } from 'react-native-element-dropdown';
 import { useFocusEffect } from '@react-navigation/native';
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
 import { PlusAddIcon } from '../../assets/svgs/SvgsFile';
-import { getLeadDetailsApi, getLeadsApi, getLeadStatusSourceApi, updateLeadStatusApi } from '../../api/query/LeadApi';
+import { getDraftApprovalsApi, getLeadDetailsApi, getLeadsApi, getLeadStatusSourceApi, updateLeadStatusApi } from '../../api/query/LeadApi';
 import AppText from '../../components/AppText/AppText';
 import CustomerCalendar from '../../components/CustomCalendar/CalendarPopupView';
 import LeadActivityModal from './LeadActivityModal';
@@ -59,7 +59,7 @@ const openWhatsApp = (phone: any) => {
 const LEADS_PAGE_SIZE = 50;
 
 const LeadKonnect = ({ navigation }: any) => {
-  const { canUsePlivoCalling, startCall, isCalling, callUi } = usePlivoCall({ onFeedbackSaved: () => fetchLeads(1) });
+  const { canUsePlivoCalling, confirmAndCall, isCalling, callUi } = usePlivoCall({ onFeedbackSaved: () => fetchLeads(1) });
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [leads, setLeads] = useState<any[]>([]);
@@ -83,6 +83,8 @@ const LeadKonnect = ({ navigation }: any) => {
   const [selectedUser, setSelectedUser] = useState<any>('');
   const [selectedSource, setSelectedSource] = useState('');
   const [selectedDesignation, setSelectedDesignation] = useState('');
+  const [selectedProgress, setSelectedProgress] = useState('');
+  const [draftProgress, setDraftProgress] = useState('');
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
   const [draftUser, setDraftUser] = useState<any>('');
@@ -95,17 +97,38 @@ const LeadKonnect = ({ navigation }: any) => {
   const [rangeType, setRangeType] = useState('custom');
   const filterSheetRef = useRef<ActionSheetRef>(null);
 
+  // Drafts waiting for this user's approval (Email + LinkedIn), shown on the header button.
+  const [pendingDrafts, setPendingDrafts] = useState(0);
+  useFocusEffect(useCallback(() => {
+    getDraftApprovalsApi({ type: 'email' })
+      .then(response => {
+        const counts = response?.data?.pending_counts || {};
+        setPendingDrafts(Number(counts.email || 0) + Number(counts.linkedin || 0));
+      })
+      .catch(() => setPendingDrafts(0));
+  }, []));
+
   useLayoutEffect(() => {
     navigation.setOptions({
-      headerRight: canUsePlivoCalling ? () => (
-        <Pressable accessibilityRole="button" accessibilityLabel="Open call history" style={styles.headerCallButton} onPress={() => navigation.navigate('CallHistory')}>
-          <Svg width={23} height={23} viewBox="0 0 24 24" fill="none">
-            <Path d="M6.62 10.79a15.46 15.46 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z" fill={colors.blue} />
-          </Svg>
-        </Pressable>
-      ) : undefined,
+      headerRight: () => (
+        <View style={styles.headerButtons}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open draft approval" style={styles.headerCallButton} onPress={() => navigation.navigate('DraftApprovals')}>
+            <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+              <Path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" stroke={colors.blue} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+            </Svg>
+            {pendingDrafts > 0 ? <View style={styles.headerBadge}><AppText size={10} color="white" family="InterBold">{pendingDrafts > 99 ? '99+' : pendingDrafts}</AppText></View> : null}
+          </Pressable>
+          {canUsePlivoCalling ? (
+            <Pressable accessibilityRole="button" accessibilityLabel="Open call history" style={styles.headerCallButton} onPress={() => navigation.navigate('CallHistory')}>
+              <Svg width={23} height={23} viewBox="0 0 24 24" fill="none">
+                <Path d="M6.62 10.79a15.46 15.46 0 006.59 6.59l2.2-2.2a1 1 0 011.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 011 1V20a1 1 0 01-1 1C10.61 21 3 13.39 3 4a1 1 0 011-1h3.5a1 1 0 011 1c0 1.25.2 2.45.57 3.57a1 1 0 01-.25 1.02l-2.2 2.2z" fill={colors.blue} />
+              </Svg>
+            </Pressable>
+          ) : null}
+        </View>
+      ),
     });
-  }, [canUsePlivoCalling, navigation]);
+  }, [canUsePlivoCalling, navigation, pendingDrafts]);
 
 
   useEffect(() => {
@@ -134,6 +157,7 @@ const LeadKonnect = ({ navigation }: any) => {
       if (selectedUser) params.user_id = selectedUser;
       if (selectedSource) params.lead_source = selectedSource;
       if (selectedDesignation) params.designation = selectedDesignation;
+      if (selectedProgress) params.call_progress = selectedProgress;
       if (selectedStatus !== -1) params.status = selectedStatus;
       if (startDate && endDate) {
         params.start_date = formatYYYYMMDD(startDate);
@@ -170,7 +194,7 @@ const LeadKonnect = ({ navigation }: any) => {
         setLoadingMore(false);
       }
     }
-  }, [debouncedSearch, endDate, selectedDesignation, selectedSource, selectedStatus, selectedUser, startDate]);
+  }, [debouncedSearch, endDate, selectedDesignation, selectedProgress, selectedSource, selectedStatus, selectedUser, startDate]);
 
   // Activity comes from the lead details API, the same source as the Lead Details screen.
   const openLeadActivity = async (leadId: any) => {
@@ -221,7 +245,7 @@ const LeadKonnect = ({ navigation }: any) => {
     label: String(item?.display_name || 'Status').replace(/\b\w/g, char => char.toUpperCase()),
     value: item?.id,
   })), [leadStatuses]);
-  const activeFilterCount = Number(Boolean(selectedUser)) + Number(selectedStatus !== -1 && selectedStatus !== '-1') + Number(Boolean(selectedSource)) + Number(Boolean(selectedDesignation)) + Number(Boolean(startDate && endDate));
+  const activeFilterCount = Number(Boolean(selectedUser)) + Number(selectedStatus !== -1 && selectedStatus !== '-1') + Number(Boolean(selectedSource)) + Number(Boolean(selectedDesignation)) + Number(Boolean(selectedProgress)) + Number(Boolean(startDate && endDate));
 
   const openStatusChange = (item: any) => {
     const statusId = item?.status?.id;
@@ -290,7 +314,7 @@ const LeadKonnect = ({ navigation }: any) => {
     handlePlivoCall(item);
   };
 
-  const handlePlivoCall = (item: any, selectedNumber?: string) => startCall({
+  const handlePlivoCall = (item: any, selectedNumber?: string) => confirmAndCall({
     key: item?.id || item?.lead_id || 'lead',
     phone: selectedNumber || item?.contact?.phone_number || item?.phone || '',
     name: item?.contact?.name || item?.name || 'Customer',
@@ -305,6 +329,7 @@ const LeadKonnect = ({ navigation }: any) => {
     setDraftStatus(selectedStatus);
     setDraftSource(selectedSource);
     setDraftDesignation(selectedDesignation);
+    setDraftProgress(selectedProgress);
     setDraftStartDate(startDate);
     setDraftEndDate(endDate);
     filterSheetRef.current?.show();
@@ -315,6 +340,8 @@ const LeadKonnect = ({ navigation }: any) => {
     setDraftStatus(-1);
     setDraftSource('');
     setDraftDesignation('');
+    setDraftProgress('');
+    setSelectedProgress('');
     setDraftStartDate(null);
     setDraftEndDate(null);
     setSelectedUser('');
@@ -331,6 +358,7 @@ const LeadKonnect = ({ navigation }: any) => {
     setSelectedStatus(draftStatus);
     setSelectedSource(draftSource);
     setSelectedDesignation(draftDesignation);
+    setSelectedProgress(draftProgress);
     setStartDate(draftStartDate);
     setEndDate(draftEndDate);
     filterSheetRef.current?.hide();
@@ -415,6 +443,8 @@ const LeadKonnect = ({ navigation }: any) => {
           <Dropdown style={styles.dropdown} data={userOptions} labelField="label" valueField="value" value={draftUser} onChange={item => setDraftUser(item.value)} placeholder="Select user" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
           <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Lead Status</AppText>
           <Dropdown style={styles.dropdown} data={statusOptions} labelField="label" valueField="value" value={draftStatus} onChange={item => setDraftStatus(item.value)} placeholder="Select status" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
+          <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Calling</AppText>
+          <Dropdown style={styles.dropdown} data={CALL_PROGRESS_OPTIONS} labelField="label" valueField="value" value={draftProgress} onChange={item => setDraftProgress(item.value)} placeholder="Any calling progress" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
           <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Lead Source</AppText>
           <Dropdown style={styles.dropdown} data={sourceOptions} labelField="label" valueField="value" value={draftSource} onChange={item => setDraftSource(item.value)} placeholder="Select source" placeholderStyle={styles.placeholder} selectedTextStyle={styles.selectedText} />
           <AppText size={13} color="#566078" family="InterSemiBold" style={styles.filterLabel}>Designation</AppText>
@@ -560,6 +590,19 @@ const SummaryCard = ({ count, label, active = false, onPress }: any) => (
   </Pressable>
 );
 
+// "Calling" filter, same as the CRM leads list.
+const CALL_PROGRESS_OPTIONS = [
+  { label: 'Any calling progress', value: '' },
+  { label: 'Not called', value: 'not_called' },
+  { label: 'Partially called', value: 'partial' },
+  { label: 'All contacts called', value: 'all_called' },
+];
+const CALLING_TONES: Record<string, [string, string]> = {
+  not_called: ['#1D4ED8', '#DBEAFE'],
+  partial: ['#B45309', '#FEF3C7'],
+  all_called: ['#047857', '#D1FAE5'],
+};
+
 const LeadCard = ({ item, navigation, onCallPress, onActivityPress, onStatusPress, isCalling = false }: any) => {
   const phone = cleanPhoneNumber(item?.contact?.phone_number);
   const email = String(item?.contact?.email || '').trim();
@@ -572,7 +615,15 @@ const LeadCard = ({ item, navigation, onCallPress, onActivityPress, onStatusPres
     <View style={styles.cardHeader}>
       <View style={{ flex: 1 }}>
         <AppText size={17} color={colors.blue} family="InterBold" numLines={1}>{item?.name || 'Unnamed firm'}</AppText>
-        <AppText size={14} color="#3D4659" family="InterMedium" numLines={1} style={{ marginTop: 5 }}>{item?.contact?.name || 'No contact name'}</AppText>
+        <AppText size={14} color="#3D4659" family="InterMedium" numLines={1} style={{ marginTop: 5 }}>{item?.contact?.name || 'No contact name'}{item?.contacts_count > 1 ? ` +${item.contacts_count - 1} more` : ''}</AppText>
+        <View style={styles.metaRow}>
+          {item?.external_lead_id ? <View style={styles.metaChip}><AppText size={11} color="#4F586D" family="InterBold">Lead ID {item.external_lead_id}</AppText></View> : null}
+          {item?.calling && item.calling.dialable > 0 ? (
+            <View style={[styles.metaChip, { backgroundColor: CALLING_TONES[item.calling.state]?.[1] || '#E2E8F0' }]}>
+              <AppText size={11} color={CALLING_TONES[item.calling.state]?.[0] || '#475569'} family="InterBold">Called {item.calling.called}/{item.calling.dialable}</AppText>
+            </View>
+          ) : null}
+        </View>
       </View>
       <Pressable accessibilityRole="button" accessibilityLabel="Change lead status" style={({ pressed }) => [styles.statusBadge, pressed && { opacity: 0.8 }]} onPress={onStatusPress} hitSlop={6}>
         <AppText size={13} color="white" family="InterSemiBold">{item?.status?.display_name || 'Pending'}</AppText>
@@ -656,6 +707,8 @@ const LeadListIcon = ({ type, size = 21, color = colors.blue }: any) => {
 
 const styles = StyleSheet.create({
   headerCallButton: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#EDF3FF', alignItems: 'center', justifyContent: 'center' },
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerBadge: { position: 'absolute', top: -2, right: -2, minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4, backgroundColor: '#E5484D', alignItems: 'center', justifyContent: 'center' },
   numberChoiceCard: { width: '100%', maxWidth: 380, borderRadius: 22, backgroundColor: 'white', padding: 18, gap: 10 },
   numberChoiceHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   numberOption: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 13, borderRadius: 14, borderWidth: 1, borderColor: colors.blue + '30', backgroundColor: colors.blue + '08' },
@@ -691,6 +744,8 @@ const styles = StyleSheet.create({
   summaryLabel: { textTransform: 'capitalize' },
   leadCard: { marginBottom: 14, padding: 16, borderRadius: 16, backgroundColor: 'white', shadowColor: '#18213D', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 10, elevation: 4 },
   cardHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 7 },
+  metaChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 9, backgroundColor: '#EEF1F6' },
   statusBadge: { minWidth: 76, height: 36, paddingHorizontal: 14, borderRadius: 10, backgroundColor: colors.blue, alignItems: 'center', justifyContent: 'center' },
   divider: { height: 1, backgroundColor: '#E4E7ED', marginVertical: 12 },
   infoRow: { flexDirection: 'row', gap: 12 },

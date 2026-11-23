@@ -73,6 +73,7 @@ export type RootStackParamList = {
   CallDetails: { call: any }
   CreateLead: undefined
   LeadDetails: { lead?: any } | undefined
+  DraftApprovals: undefined
   EditLead: { lead?: any } | undefined
   OpportunityList: undefined
   Documents: undefined
